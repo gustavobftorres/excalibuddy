@@ -1,4 +1,4 @@
-# Excalidraw Buddy
+# Excalibuddy
 
 AI Agent to build native diagrams on Excalidraw, all by prompting and giving life to your ideas.
 
