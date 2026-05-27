@@ -25,9 +25,9 @@ You need accounts at four services.
 | Service | Why | Cost | Credit card required? |
 |---|---|---|---|
 | **OpenAI** | LLM provider for the agent | A few cents for the whole usage | **Yes** |
-| **Upstash Vector** | Vector store for RAG (lesson 8) | Free tier, very generous | No |
-| **Braintrust** | Eval platform (lessons 4+) | Free tier | No |
-| **Tavily** | Web search API for the agent's `searchWeb` tool (lesson 7) | Free tier, 1000 searches/month | No |
+| **Upstash Vector** | Vector store for RAG | Free tier, very generous | No |
+| **Braintrust** | Eval platform | Free tier | No |
+| **Tavily** | Web search API for the agent's `searchWeb` tool | Free tier, 1000 searches/month | No |
 
 #### OpenAI
 
@@ -73,9 +73,9 @@ The Worker reads from this file via `wrangler dev` automatically. Node scripts (
 - **Runtime**: Node + Cloudflare Workers (local via `wrangler dev`, no deployment needed)
 - **Frontend**: Vite + React + Excalidraw
 - **Agent**: AI SDK + Cloudflare Agents SDK (Durable Objects, `useAgentChat`)
-- **Vector store**: Upstash Vector (lesson 8+)
-- **Evals**: Braintrust (lesson 4+)
-- **Web search**: Tavily (lesson 7+)
+- **Vector store**: Upstash Vector 
+- **Evals**: Braintrust
+- **Web search**: Tavily 
 
 Everything runs locally. No deployment, no production cloud infrastructure.
 
