@@ -1,12 +1,19 @@
 import { useEffect, useRef } from "react";
 import type { UIMessage } from "ai";
 import MessageBubble from "./MessageBubble";
+import type { UserFeedback } from "../../flywheel/types";
 
 interface MessageListProps {
   messages: UIMessage[];
+  onFeedback: (feedback: UserFeedback) => Promise<void>;
+  feedbackReadyMessageIds: Set<string>;
 }
 
-export default function MessageList({ messages }: MessageListProps) {
+export default function MessageList({
+  messages,
+  onFeedback,
+  feedbackReadyMessageIds,
+}: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Track whether the user was at (or near) the bottom before the last update
   // so we only auto scroll when they were already following along.
@@ -40,7 +47,12 @@ export default function MessageList({ messages }: MessageListProps) {
   return (
     <div className="message-list" ref={containerRef} onScroll={handleScroll}>
       {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
+        <MessageBubble
+          key={msg.id}
+          message={msg}
+          onFeedback={onFeedback}
+          feedbackReady={feedbackReadyMessageIds.has(msg.id)}
+        />
       ))}
     </div>
   );

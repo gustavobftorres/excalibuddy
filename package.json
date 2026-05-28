@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "node node_modules/vite/bin/vite.js dev",
+    "build": "node node_modules/vite/bin/vite.js build",
+    "preview": "node node_modules/vite/bin/vite.js preview",
     "docs": "vitepress dev lessons",
     "docs:build": "vitepress build lessons",
     "agent": "node scripts/test-agent.mjs",
     "eval": "dotenv -e .dev.vars -- braintrust eval evals/diagram.eval.ts",
-    "embed": "dotenv -e .dev.vars -- tsx src/rag/embed.ts"
+    "embed": "dotenv -e .dev.vars -- tsx src/rag/embed.ts",
+    "flywheel:export": "node scripts/export-flywheel-candidates.mjs",
+    "flywheel:promote": "node scripts/promote-flywheel-case.mjs",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\""
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.50",

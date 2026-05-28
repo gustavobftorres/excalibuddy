@@ -1,17 +1,22 @@
 import { useState } from "react";
 import type { UIMessage } from "ai";
 import MessageList from "./MessageList";
+import type { UserFeedback } from "../../flywheel/types";
 import "./chat.css";
 
 interface ChatPanelProps {
   messages: UIMessage[];
   sendMessage: (message: { role: "user"; parts: { type: "text"; text: string }[] }) => void;
+  onFeedback: (feedback: UserFeedback) => Promise<void>;
+  feedbackReadyMessageIds: Set<string>;
   status: string;
 }
 
 export default function ChatPanel({
   messages,
   sendMessage,
+  onFeedback,
+  feedbackReadyMessageIds,
   status,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
@@ -33,7 +38,11 @@ export default function ChatPanel({
       <div className="chat-header">
         <h2>Chat</h2>
       </div>
-      <MessageList messages={messages} />
+      <MessageList
+        messages={messages}
+        onFeedback={onFeedback}
+        feedbackReadyMessageIds={feedbackReadyMessageIds}
+      />
       <form className="chat-input-form" onSubmit={handleSubmit}>
         <input
           type="text"

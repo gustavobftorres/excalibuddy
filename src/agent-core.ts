@@ -10,6 +10,7 @@ import {
   tool,
   type LanguageModel,
   type ModelMessage,
+  type StreamTextOnFinishCallback,
 } from "ai";
 import { z } from "zod";
 import { buildTools } from "./tools";
@@ -115,6 +116,7 @@ interface AgentArgs {
   seedCanvas?: unknown[];
   system?: string;
   maxSteps?: number;
+  onFinish?: StreamTextOnFinishCallback<any>;
   env?: {
     TAVILY_API_KEY?: string;
     UPSTASH_VECTOR_REST_URL?: string;
@@ -128,6 +130,7 @@ export function streamAgent({
   messages,
   system = SYSTEM_PROMPT,
   maxSteps = 8,
+  onFinish,
   env = {},
 }: AgentArgs) {
   return streamText({
@@ -136,6 +139,7 @@ export function streamAgent({
     messages,
     tools: buildTools(env),
     stopWhen: stepCountIs(maxSteps),
+    onFinish,
   });
 }
 
