@@ -28,9 +28,23 @@ config({ path: ".dev.vars" });
 
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const testCases: GoldenTestCase[] = JSON.parse(
+type FlywheelRegressionCase = GoldenTestCase & {
+  sourceTraceId: string;
+  feedback: "thumbs_down" | "thumbs_up";
+  reviewNotes: string;
+};
+
+const goldenCases: GoldenTestCase[] = JSON.parse(
   readFileSync(join("evals", "datasets", "golden_2.json"), "utf-8")
 );
+const regressionCases: FlywheelRegressionCase[] = JSON.parse(
+  readFileSync(join("evals", "datasets", "regression.json"), "utf-8")
+);
+
+const testCases = [
+  ...goldenCases.map((testCase) => ({ ...testCase, source: "golden" as const })),
+  ...regressionCases.map((testCase) => ({ ...testCase, source: "flywheel" as const })),
+];
 
 Eval<GoldenTestCase, AgentOutput, GoldenTestCase>("Diagram Agent", {
   data: () =>
@@ -41,6 +55,9 @@ Eval<GoldenTestCase, AgentOutput, GoldenTestCase>("Diagram Agent", {
         id: tc.id,
         difficulty: tc.difficulty,
         category: tc.category,
+        source: tc.source,
+        sourceTraceId: "sourceTraceId" in tc ? tc.sourceTraceId : undefined,
+        feedback: "feedback" in tc ? tc.feedback : undefined,
       },
     })),
 

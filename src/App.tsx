@@ -7,11 +7,20 @@ import {
 } from "@excalidraw/excalidraw";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
+import type { UIMessage } from "ai";
 import Canvas from "./components/Canvas";
 import ChatPanel from "./components/chat/ChatPanel";
 import { serializeCanvasState } from "./context/canvas-state";
 import { findOverlaps } from "./context/overlaps";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
+import {
+  finalizeTrace,
+  getMessageMetadata,
+  getTraceApiBaseUrl,
+  hasPendingToolCall,
+  sendFeedback,
+} from "./flywheel/client";
+import type { UserFeedback } from "./flywheel/types";
 import "./App.css";
 
 // One agent instance per page load. The canvas state lives only in the
@@ -19,6 +28,8 @@ import "./App.css";
 // conversation referencing diagrams that no longer exist.
 const sessionId = crypto.randomUUID();
 const agentHost = import.meta.env.VITE_AGENT_HOST;
+const TEXT_RENDER_PADDING = 12;
+const FINAL_TURN_SETTLE_MS = 900;
 
 // Recursively drop null valued fields. Our tool schemas use nullable
 // rather than optional so OpenAI strict mode stays on, which means the
@@ -38,10 +49,44 @@ function stripNulls(value: unknown): unknown {
   return value;
 }
 
+function protectCenteredTextBounds<T extends readonly unknown[]>(elements: T): T {
+  return elements.map((element) => {
+    const el = element as {
+      type?: string;
+      x?: number;
+      width?: number;
+      textAlign?: string;
+      customData?: Record<string, unknown>;
+    };
+    if (
+      el.type !== "text" ||
+      typeof el.x !== "number" ||
+      typeof el.width !== "number" ||
+      el.textAlign !== "center" ||
+      el.customData?.textRenderPadding === TEXT_RENDER_PADDING
+    ) {
+      return element;
+    }
+
+    return newElementWith(element as never, {
+      x: el.x - TEXT_RENDER_PADDING,
+      width: el.width + TEXT_RENDER_PADDING * 2,
+      customData: {
+        ...(el.customData ?? {}),
+        textRenderPadding: TEXT_RENDER_PADDING,
+      },
+    } as never);
+  }) as unknown as T;
+}
+
 export default function App() {
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [feedbackReadyMessageIds, setFeedbackReadyMessageIds] = useState<Set<string>>(new Set());
+  const pendingTurnIdRef = useRef<string | undefined>(undefined);
+  const finalizedAssistantIdsRef = useRef<Set<string>>(new Set());
+  const traceApiBaseUrl = getTraceApiBaseUrl(agentHost);
 
   // Hold the latest excalidrawAPI in a ref so onToolCall (captured once at
   // hook init) always reads the live API instead of a stale closure copy.
@@ -65,6 +110,10 @@ export default function App() {
   // addToolOutput so the agent loop resumes.
   const { messages, sendMessage, status } = useAgentChat({
     agent,
+    body: () => ({
+      sessionId,
+      turnId: pendingTurnIdRef.current,
+    }),
     onToolCall: async ({ toolCall, addToolOutput }) => {
       const api = excalidrawAPIRef.current;
       if (!api) {
@@ -109,7 +158,7 @@ export default function App() {
           return newElementWith(el, { boundElements: merged } as never);
         });
 
-        const next = [...patchedExisting, ...newOnes];
+        const next = protectCenteredTextBounds([...patchedExisting, ...newOnes]);
         api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
         api.scrollToContent(next, { fitToContent: true });
         // Detect overlaps in the post-add scene and surface them in the
@@ -131,12 +180,12 @@ export default function App() {
         const byId = new Map(
           updates.map((u) => [u.id, stripNulls(u.fields) as Record<string, unknown>])
         );
-        const next = api.getSceneElements().map((el) => {
+        const next = protectCenteredTextBounds(api.getSceneElements().map((el) => {
           const fields = byId.get(el.id);
           return fields && Object.keys(fields).length > 0
             ? newElementWith(el, fields as never)
             : el;
-        });
+        }));
         api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
         addToolOutput({ toolCallId: toolCall.toolCallId, output: { updated: byId.size } });
         return;
@@ -153,6 +202,64 @@ export default function App() {
     },
   });
 
+  const sendMessageWithTrace = useCallback(
+    (message: { role: "user"; parts: { type: "text"; text: string }[] }) => {
+      const turnId = crypto.randomUUID();
+      pendingTurnIdRef.current = turnId;
+      sendMessage({
+        ...message,
+        metadata: { turnId, sessionId },
+      } as UIMessage);
+    },
+    [sendMessage]
+  );
+
+  const handleFeedback = useCallback(
+    async (feedback: UserFeedback) => {
+      await sendFeedback(traceApiBaseUrl, feedback);
+    },
+    [traceApiBaseUrl]
+  );
+
+  useEffect(() => {
+    if (status === "submitted" || status === "streaming") return;
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+
+    const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
+    if (!latestAssistant || hasPendingToolCall(latestAssistant)) return;
+    if (finalizedAssistantIdsRef.current.has(latestAssistant.id)) return;
+
+    const metadata = getMessageMetadata(latestAssistant);
+    if (!metadata.turnId) return;
+
+    const timeout = window.setTimeout(() => {
+      const currentLatestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
+      if (!currentLatestAssistant || currentLatestAssistant.id !== latestAssistant.id) return;
+      if (hasPendingToolCall(currentLatestAssistant)) return;
+      finalizedAssistantIdsRef.current.add(latestAssistant.id);
+      const finalCanvasSummary = serializeCanvasState(api.getSceneElements() as unknown[]);
+      setFeedbackReadyMessageIds((prev) => {
+        const next = new Set(prev);
+        for (const message of messages) {
+          const messageMetadata = getMessageMetadata(message);
+          if (messageMetadata.turnId === metadata.turnId) next.delete(message.id);
+        }
+        next.add(latestAssistant.id);
+        return next;
+      });
+      void finalizeTrace({
+        apiBaseUrl: traceApiBaseUrl,
+        turnId: metadata.turnId as string,
+        sessionId: metadata.sessionId ?? sessionId,
+        assistantMessage: latestAssistant,
+        finalCanvasSummary,
+      });
+    }, FINAL_TURN_SETTLE_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [messages, status, traceApiBaseUrl]);
+
   return (
     <div className={`app ${theme}`}>
       <div className="canvas-container">
@@ -160,7 +267,9 @@ export default function App() {
       </div>
       <ChatPanel
         messages={messages}
-        sendMessage={sendMessage}
+        sendMessage={sendMessageWithTrace}
+        onFeedback={handleFeedback}
+        feedbackReadyMessageIds={feedbackReadyMessageIds}
         status={status}
       />
       <a href="#viewer" className="viewer-launch" title="Open diagram viewer for human scoring">

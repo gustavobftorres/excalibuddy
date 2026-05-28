@@ -1,13 +1,34 @@
+import { useState } from "react";
 import type { UIMessage } from "ai";
 import MarkdownRenderer from "./MarkdownRenderer";
 import ToolStatus from "../streaming/ToolStatus";
+import { getMessageMetadata } from "../../flywheel/client";
+import type { UserFeedback } from "../../flywheel/types";
 import "../streaming/streaming.css";
 
 interface MessageBubbleProps {
   message: UIMessage;
+  onFeedback: (feedback: UserFeedback) => Promise<void>;
+  feedbackReady: boolean;
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({ message, onFeedback, feedbackReady }: MessageBubbleProps) {
+  const [feedbackState, setFeedbackState] = useState<"idle" | "commenting" | "submitted">("idle");
+  const [comment, setComment] = useState("");
+  const metadata = getMessageMetadata(message);
+
+  const submitFeedback = async (rating: 1 | 0, feedbackComment?: string) => {
+    if (!metadata.turnId || !metadata.sessionId) return;
+    setFeedbackState("submitted");
+    await onFeedback({
+      turnId: metadata.turnId,
+      rating,
+      comment: feedbackComment,
+      assistantMessageId: message.id,
+      sessionId: metadata.sessionId,
+    });
+  };
+
   return (
     <div className={`message-bubble ${message.role}`}>
       <div className="message-role">
@@ -39,6 +60,53 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           return null;
         })}
       </div>
+      {message.role === "assistant" && metadata.turnId && feedbackReady && (
+        <div className="message-feedback">
+          {feedbackState === "submitted" ? (
+            <span className="feedback-sent">Feedback saved</span>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="feedback-btn"
+                aria-label="Mark response as helpful"
+                title="Helpful"
+                onClick={() => void submitFeedback(1)}
+              >
+                👍
+              </button>
+              <button
+                type="button"
+                className="feedback-btn"
+                aria-label="Mark response as not helpful"
+                title="Not helpful"
+                onClick={() => setFeedbackState("commenting")}
+              >
+                👎
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {feedbackState === "commenting" && (
+        <form
+          className="feedback-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitFeedback(0, comment.trim() || undefined);
+          }}
+        >
+          <input
+            className="feedback-input"
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            placeholder="What was wrong?"
+          />
+          <button type="submit" className="feedback-submit">
+            Send
+          </button>
+        </form>
+      )}
     </div>
   );
 }
