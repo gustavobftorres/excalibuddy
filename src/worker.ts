@@ -6,6 +6,9 @@ export { DesignAgent };
 interface Env {
   DesignAgent: DurableObjectNamespace;
   OPENAI_API_KEY: string;
+  TAVILY_API_KEY: string;
+  UPSTASH_VECTOR_REST_URL: string;
+  UPSTASH_VECTOR_REST_TOKEN: string;
 }
 
 export default {

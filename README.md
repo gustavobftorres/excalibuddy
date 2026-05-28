@@ -67,15 +67,45 @@ TAVILY_API_KEY=tvly-...
 
 The Worker reads from this file via `wrangler dev` automatically. Node scripts (`npm run embed`, `npm run eval`) read it via `dotenv-cli`.
 
+### 4. Deploy
+
+The frontend can be deployed to Vercel, but the agent runtime must run on
+Cloudflare Workers because it depends on Cloudflare Agents and Durable Objects.
+
+Deploy the Worker:
+
+```bash
+npx wrangler deploy
+```
+
+Configure the same Worker secrets in Cloudflare:
+
+```bash
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put UPSTASH_VECTOR_REST_URL
+npx wrangler secret put UPSTASH_VECTOR_REST_TOKEN
+npx wrangler secret put TAVILY_API_KEY
+```
+
+Then set this Vercel environment variable for the frontend build:
+
+```bash
+VITE_AGENT_HOST=<your-worker-host>
+```
+
+For example, use `ai-design-tool.<your-subdomain>.workers.dev` or a custom
+Cloudflare Worker domain. Do not include `/agents/design-agent`; the client
+library adds that path.
+
 
 ## Tech stack
 
-- **Runtime**: Node + Cloudflare Workers (local via `wrangler dev`, no deployment needed)
+- **Runtime**: Node + Cloudflare Workers (local via `wrangler dev`, production via `wrangler deploy`)
 - **Frontend**: Vite + React + Excalidraw
 - **Agent**: AI SDK + Cloudflare Agents SDK (Durable Objects, `useAgentChat`)
 - **Vector store**: Upstash Vector 
 - **Evals**: Braintrust
 - **Web search**: Tavily 
 
-Everything runs locally. No deployment, no production cloud infrastructure.
-
+Everything runs locally for development. In production, Vercel serves the static
+frontend and Cloudflare Workers hosts the agent backend.

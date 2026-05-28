@@ -18,6 +18,7 @@ import "./App.css";
 // browser, so persisting chat history across refreshes would leave a dead
 // conversation referencing diagrams that no longer exist.
 const sessionId = crypto.randomUUID();
+const agentHost = import.meta.env.VITE_AGENT_HOST;
 
 // Recursively drop null valued fields. Our tool schemas use nullable
 // rather than optional so OpenAI strict mode stays on, which means the
@@ -53,7 +54,11 @@ export default function App() {
     setExcalidrawAPI(api);
   }, []);
 
-  const agent = useAgent({ agent: "design-agent", name: sessionId });
+  const agent = useAgent({
+    agent: "design-agent",
+    name: sessionId,
+    ...(agentHost ? { host: agentHost } : {}),
+  });
 
   // All four canvas tools are client side. The worker streams the call here,
   // we apply it to the live Excalidraw scene, and submit the result via
