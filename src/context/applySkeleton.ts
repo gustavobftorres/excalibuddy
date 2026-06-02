@@ -101,19 +101,20 @@ export function applySkeleton(skeletons: SkeletonElement[]): RuntimeElement[] {
     if (type === "arrow" || type === "line") {
       // Map skeleton `start: { id }` / `end: { id }` to runtime
       // `startBinding: { elementId, focus, gap }` / `endBinding`.
-      // focus 0 and gap 8 are the defaults the live helper uses.
+      // focus 0 and a positive gap keep aligned connectors anchored to edge centers
+      // when Excalidraw recalculates bindings after manual shape movement.
       const { start, end, label, ...arrowFields } = el;
       const arrow: RuntimeElement = { ...arrowFields };
       if (start && typeof start === "object") {
         const startId = (start as Record<string, unknown>).id;
         if (typeof startId === "string") {
-          arrow.startBinding = { elementId: startId, focus: 0, gap: 8 };
+          arrow.startBinding = { elementId: startId, focus: 0, gap: 1 };
         }
       }
       if (end && typeof end === "object") {
         const endId = (end as Record<string, unknown>).id;
         if (typeof endId === "string") {
-          arrow.endBinding = { elementId: endId, focus: 0, gap: 8 };
+          arrow.endBinding = { elementId: endId, focus: 0, gap: 1 };
         }
       }
       // Arrow labels also create a child text element bound to the arrow,

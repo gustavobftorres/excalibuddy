@@ -17,6 +17,8 @@ import { buildTools } from "./tools";
 import { serializeCanvasState } from "./context/canvas-state";
 import { applySkeleton } from "./context/applySkeleton";
 import { findOverlaps } from "./context/overlaps";
+import { normalizeTextRenderBounds } from "./context/text-rendering";
+import { normalizeArrowGeometry } from "./context/arrow-geometry";
 
 export const SYSTEM_PROMPT = `# Role
 
@@ -79,6 +81,7 @@ Recognize the pattern, then follow its layout.
 # Behavioral guidelines
 
 - **Act on overlap feedback.** Every \`addElements\` result includes an \`overlaps\` array listing pairs of element ids whose bounding boxes collide on the canvas. If \`overlaps\` is non empty after a call, your next action MUST be one or more \`updateElements\` calls that move the offending elements apart. Do not leave overlaps in the final layout.
+- **Act on canvas hygiene warnings.** If \`queryCanvas\` reports unbound arrows, angled arrows between aligned shapes, clipped labels, or unreadable text, your next action MUST be \`updateElements\`, \`addElements\`, or \`removeElements\` to fix those exact ids. Straight arrows between vertically or horizontally aligned shapes should run from the middle of the source shape edge to the middle of the target shape edge; for diamonds this is the relevant corner.
 - **Query before you modify.** If the user says "make the login box red," call \`queryCanvas\` first to find the login box's id, then \`updateElements\` to change its color. Never invent ids.
 - **Prefer updateElements for tweaks.** Don't redraw the whole diagram when one element changes.
 - **Preserve what exists.** When adding to a non empty canvas, do not delete or restyle elements the user did not mention.
@@ -160,6 +163,10 @@ export async function runAgent({
   // mutate it. queryCanvas reads from it; addElements/updateElements/
   // removeElements write to it.
   const sim: Record<string, unknown>[] = (seedCanvas as Record<string, unknown>[]).map((el) => ({ ...el }));
+  const normalizeSim = () => {
+    const normalized = normalizeArrowGeometry(normalizeTextRenderBounds(sim)) as Record<string, unknown>[];
+    sim.splice(0, sim.length, ...normalized);
+  };
 
   // Build eval-only versions of every tool that needs to touch `sim`. We
   // can't reuse the worker tool definitions because (a) queryCanvas has no
@@ -178,8 +185,11 @@ export async function runAgent({
         // arrow start/end shorthand becomes startBinding/endBinding. Without
         // this, the eval scorers read raw model claims and not what the
         // canvas would actually render.
-        const runtime = applySkeleton(elements as Record<string, unknown>[]);
+        const runtime = normalizeArrowGeometry(
+          normalizeTextRenderBounds(applySkeleton(elements as Record<string, unknown>[]))
+        );
         for (const el of runtime) sim.push({ ...el });
+        normalizeSim();
         // Surface overlaps in the tool result so the agent loop sees
         // collisions immediately and can self correct via updateElements.
         // Same finding the noOverlaps scorer would report on this scene.
@@ -202,6 +212,7 @@ export async function runAgent({
           const target = sim.find((el) => el.id === id);
           if (target) Object.assign(target, fields);
         }
+        normalizeSim();
         return { updates: cleaned };
       },
     }),
