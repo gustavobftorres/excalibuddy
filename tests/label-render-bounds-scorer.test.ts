@@ -41,6 +41,31 @@ test("labelRenderBoundsScorer reports risky labels", () => {
   assert.deepEqual(result.metadata.risky.map((risk) => risk.id), ["rect_label"]);
 });
 
+test("labelRenderBoundsScorer reports labels whose longest word would wrap", () => {
+  const result = labelRenderBoundsScorer({
+    output: {
+      text: "",
+      toolCalls: [],
+      elements: [
+        {
+          id: "decision_label",
+          type: "text",
+          text: "Cooked?",
+          width: 60,
+          height: 40,
+          x: 0,
+          y: 0,
+          containerId: "decision",
+        },
+      ],
+    },
+  } as never) as { score: number; metadata: { passed: boolean; risky: { id: string }[] } };
+
+  assert.equal(result.score, 0);
+  assert.equal(result.metadata.passed, false);
+  assert.deepEqual(result.metadata.risky.map((risk) => risk.id), ["decision_label"]);
+});
+
 test("serializeCanvasState surfaces label render risks to queryCanvas", () => {
   const summary = serializeCanvasState([
     { id: "rect", type: "rectangle", x: 100, y: 100, width: 220, height: 120 },
