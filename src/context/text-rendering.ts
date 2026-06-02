@@ -2,12 +2,21 @@ interface TextLike {
   id?: unknown;
   type?: unknown;
   x?: unknown;
+  y?: unknown;
   width?: unknown;
   height?: unknown;
   text?: unknown;
   fontSize?: unknown;
   textAlign?: unknown;
   containerId?: unknown;
+  customData?: unknown;
+}
+
+interface ShapeLike {
+  id?: unknown;
+  type?: unknown;
+  x?: unknown;
+  width?: unknown;
   customData?: unknown;
 }
 
@@ -25,6 +34,7 @@ type UpdateElement = (element: unknown, updates: Record<string, unknown>) => unk
 const HORIZONTAL_PADDING = 8;
 const AVERAGE_CHAR_WIDTH_RATIO = 0.62;
 const MIN_SAFE_TEXT_WIDTH = 16;
+const CONTAINER_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
 
 function getCustomData(el: TextLike): Record<string, unknown> {
   return el.customData && typeof el.customData === "object"
@@ -51,7 +61,58 @@ export function estimateTextRenderWidth(text: string, fontSize = 20): number {
   return Math.max(MIN_SAFE_TEXT_WIDTH, longestLine * fontSize * AVERAGE_CHAR_WIDTH_RATIO);
 }
 
-function normalizeTextElement(el: TextLike, updateElement: UpdateElement): unknown {
+function estimateLongestWordRenderWidth(text: string, fontSize = 20): number {
+  const longestWord = text
+    .split(/\s+/)
+    .reduce((max, word) => Math.max(max, word.length), 0);
+  return Math.max(MIN_SAFE_TEXT_WIDTH, longestWord * fontSize * AVERAGE_CHAR_WIDTH_RATIO);
+}
+
+function requiredUnbrokenTextWidth(text: string, fontSize = 20): number {
+  return estimateLongestWordRenderWidth(text, fontSize) + HORIZONTAL_PADDING * 2;
+}
+
+function requiredTextRenderBoundsWidth(text: string, fontSize = 20): number {
+  return estimateTextRenderWidth(text, fontSize) + HORIZONTAL_PADDING * 2;
+}
+
+function isContainerShape(el: ShapeLike): boolean {
+  return (
+    typeof el.id === "string" &&
+    typeof el.type === "string" &&
+    CONTAINER_TYPES.has(el.type) &&
+    typeof el.x === "number" &&
+    typeof el.width === "number"
+  );
+}
+
+function normalizeWidth(
+  el: TextLike,
+  requiredWidth: number,
+  updateElement: UpdateElement
+): unknown {
+  if (typeof el.x !== "number" || typeof el.width !== "number") return el;
+
+  const width = Math.max(el.width, requiredWidth);
+  const delta = width - el.width;
+  if (delta <= 0) return el;
+
+  const align = getTextAlign(el);
+  const x =
+    align === "center"
+      ? el.x - delta / 2
+      : align === "right"
+        ? el.x - delta
+        : el.x;
+
+  return updateElement(el, { x, width });
+}
+
+function normalizeTextElement(
+  el: TextLike,
+  requiredWidth: number,
+  updateElement: UpdateElement
+): unknown {
   const text = getText(el);
   if (
     el.type !== "text" ||
@@ -67,20 +128,9 @@ function normalizeTextElement(el: TextLike, updateElement: UpdateElement): unkno
     return el;
   }
 
-  const requiredWidth = estimateTextRenderWidth(text, getFontSize(el)) + HORIZONTAL_PADDING * 2;
-  const width = Math.max(el.width, requiredWidth);
-  const delta = width - el.width;
-  const align = getTextAlign(el);
-  const x =
-    align === "center"
-      ? el.x - delta / 2
-      : align === "right"
-        ? el.x - delta
-        : el.x;
+  const normalized = normalizeWidth(el, requiredWidth, updateElement) as TextLike;
 
-  return updateElement(el, {
-    x,
-    width,
+  return updateElement(normalized, {
     customData: {
       ...customData,
       textRenderBoundsNormalized: true,
@@ -96,7 +146,40 @@ export function normalizeTextRenderBounds<T extends readonly unknown[]>(
     ...updates,
   })
 ): T {
-  return elements.map((element) => normalizeTextElement(element as TextLike, updateElement)) as unknown as T;
+  const containerWidthById = new Map<string, number>();
+
+  for (const element of elements) {
+    const el = element as TextLike;
+    const text = getText(el);
+    if (el.type !== "text" || !text || typeof el.containerId !== "string") continue;
+    const requiredWidth = requiredUnbrokenTextWidth(text, getFontSize(el));
+    containerWidthById.set(
+      el.containerId,
+      Math.max(containerWidthById.get(el.containerId) ?? 0, requiredWidth)
+    );
+  }
+
+  return elements.map((element) => {
+    const el = element as TextLike;
+    const text = getText(el);
+    if (el.type === "text" && text) {
+      return normalizeTextElement(
+        el,
+        requiredTextRenderBoundsWidth(text, getFontSize(el)),
+        updateElement
+      );
+    }
+
+    const shape = element as ShapeLike;
+    if (!isContainerShape(shape)) return element;
+    const requiredWidth = containerWidthById.get(shape.id);
+    if (!requiredWidth || shape.width >= requiredWidth) return element;
+    const delta = requiredWidth - shape.width;
+    return updateElement(element, {
+      x: shape.x - delta / 2,
+      width: requiredWidth,
+    });
+  }) as unknown as T;
 }
 
 export function findLabelRenderRisks(elements: unknown[]): LabelRenderRisk[] {
@@ -115,7 +198,7 @@ export function findLabelRenderRisks(elements: unknown[]): LabelRenderRisk[] {
       continue;
     }
 
-    const requiredWidth = estimateTextRenderWidth(text, getFontSize(el)) + HORIZONTAL_PADDING * 2;
+    const requiredWidth = requiredTextRenderBoundsWidth(text, getFontSize(el));
     if (el.width + 0.5 >= requiredWidth) continue;
 
     risks.push({

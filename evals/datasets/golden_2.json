@@ -57,6 +57,23 @@
     "category": "create"
   },
   {
+    "id": "create-simple-04b",
+    "input": "Draw a small cooking decision flow with a diamond labeled 'Cooked?' and two outgoing arrows labeled 'Yes' and 'No'",
+    "expectedCharacteristics": [
+      "1 diamond element with label Cooked?",
+      "The Cooked? label fits without splitting the word across lines",
+      "2 arrow elements originating from the diamond",
+      "Two text labels Yes and No near the arrows"
+    ],
+    "expectedKeywords": [
+      "cooked",
+      "yes",
+      "no"
+    ],
+    "difficulty": "simple",
+    "category": "create"
+  },
+  {
     "id": "create-simple-05",
     "input": "Draw three rectangles in a vertical column labeled Top, Middle, Bottom",
     "expectedCharacteristics": [
