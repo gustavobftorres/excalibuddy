@@ -810,6 +810,172 @@
     "category": "create"
   },
   {
+    "id": "modify-fix-clipped-labels",
+    "input": "Check the canvas and fix any labels that may be clipped or unreadable",
+    "seed": {
+      "userPrompt": "draw a rectangle labeled Some text",
+      "assistantConfirmation": "Done. I drew a labeled rectangle.",
+      "elements": [
+        {
+          "id": "rect_some_text",
+          "type": "rectangle",
+          "x": 100,
+          "y": 100,
+          "width": 220,
+          "height": 120,
+          "boundElements": [
+            {
+              "id": "rect_some_text_label",
+              "type": "text"
+            }
+          ]
+        },
+        {
+          "id": "rect_some_text_label",
+          "type": "text",
+          "x": 185,
+          "y": 140,
+          "width": 48,
+          "height": 32,
+          "text": "Some text",
+          "fontSize": 20,
+          "textAlign": "center",
+          "containerId": "rect_some_text"
+        }
+      ]
+    },
+    "expectedCharacteristics": [
+      "Agent calls queryCanvas before changing the canvas",
+      "The Some text label remains bound to rect_some_text",
+      "The label has enough horizontal bounds to render without clipping"
+    ],
+    "expectedKeywords": [
+      "some text"
+    ],
+    "preservedIds": [
+      "rect_some_text",
+      "rect_some_text_label"
+    ],
+    "difficulty": "medium",
+    "category": "modify"
+  },
+  {
+    "id": "modify-fix-angled-aligned-arrow",
+    "input": "Check the canvas and straighten any arrows between aligned shapes",
+    "seed": {
+      "userPrompt": "draw a vertical flow from Start to Preheat oven",
+      "assistantConfirmation": "Done. I drew a start circle connected to a process box.",
+      "elements": [
+        {
+          "id": "ellipse_start",
+          "type": "ellipse",
+          "x": 100,
+          "y": 100,
+          "width": 120,
+          "height": 120,
+          "boundElements": [
+            {
+              "id": "ellipse_start_label",
+              "type": "text"
+            },
+            {
+              "id": "arrow_start_preheat",
+              "type": "arrow"
+            }
+          ]
+        },
+        {
+          "id": "ellipse_start_label",
+          "type": "text",
+          "x": 100,
+          "y": 100,
+          "width": 120,
+          "height": 120,
+          "text": "Start",
+          "containerId": "ellipse_start"
+        },
+        {
+          "id": "rect_preheat",
+          "type": "rectangle",
+          "x": 40,
+          "y": 280,
+          "width": 240,
+          "height": 100,
+          "boundElements": [
+            {
+              "id": "rect_preheat_label",
+              "type": "text"
+            },
+            {
+              "id": "arrow_start_preheat",
+              "type": "arrow"
+            }
+          ]
+        },
+        {
+          "id": "rect_preheat_label",
+          "type": "text",
+          "x": 40,
+          "y": 280,
+          "width": 240,
+          "height": 100,
+          "text": "Preheat oven",
+          "containerId": "rect_preheat"
+        },
+        {
+          "id": "arrow_start_preheat",
+          "type": "arrow",
+          "x": 172,
+          "y": 220,
+          "width": 22,
+          "height": 60,
+          "startBinding": {
+            "elementId": "ellipse_start"
+          },
+          "endBinding": {
+            "elementId": "rect_preheat"
+          }
+        }
+      ]
+    },
+    "expectedCharacteristics": [
+      "Agent calls queryCanvas before changing the canvas",
+      "The arrow remains bound from ellipse_start to rect_preheat",
+      "The arrow is vertical from the bottom center of Start to the top center of Preheat oven"
+    ],
+    "expectedKeywords": [
+      "start",
+      "preheat"
+    ],
+    "preservedIds": [
+      "ellipse_start",
+      "rect_preheat",
+      "arrow_start_preheat"
+    ],
+    "difficulty": "medium",
+    "category": "modify"
+  },
+  {
+    "id": "create-vertical-process-straight-arrows",
+    "input": "Draw a vertical baking process flow: Start, Preheat oven, Prepare pan, Mix dry ingredients, Add wet ingredients, Pour batter in pan, Bake",
+    "expectedCharacteristics": [
+      "7 labeled steps arranged in a vertical flow",
+      "Every arrow is bound to a source and target shape",
+      "Arrows between vertically aligned shapes are straight and connect edge centers"
+    ],
+    "expectedKeywords": [
+      "start",
+      "preheat",
+      "prepare",
+      "mix",
+      "wet",
+      "pour",
+      "bake"
+    ],
+    "difficulty": "medium",
+    "category": "create"
+  },
+  {
     "id": "create-tight-grid",
     "input": "Draw a 2x2 grid of labeled boxes: top-left A, top-right B, bottom-left C, bottom-right D, sharing edges",
     "expectedCharacteristics": [

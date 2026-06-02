@@ -13,6 +13,8 @@ import ChatPanel from "./components/chat/ChatPanel";
 import { serializeCanvasState } from "./context/canvas-state";
 import { findOverlaps } from "./context/overlaps";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
+import { normalizeTextRenderBounds } from "./context/text-rendering";
+import { normalizeArrowGeometry } from "./context/arrow-geometry";
 import {
   finalizeTrace,
   getMessageMetadata,
@@ -28,7 +30,6 @@ import "./App.css";
 // conversation referencing diagrams that no longer exist.
 const sessionId = crypto.randomUUID();
 const agentHost = import.meta.env.VITE_AGENT_HOST;
-const TEXT_RENDER_PADDING = 12;
 const FINAL_TURN_SETTLE_MS = 900;
 
 // Recursively drop null valued fields. Our tool schemas use nullable
@@ -49,34 +50,19 @@ function stripNulls(value: unknown): unknown {
   return value;
 }
 
-function protectCenteredTextBounds<T extends readonly unknown[]>(elements: T): T {
-  return elements.map((element) => {
-    const el = element as {
-      type?: string;
-      x?: number;
-      width?: number;
-      textAlign?: string;
-      customData?: Record<string, unknown>;
-    };
-    if (
-      el.type !== "text" ||
-      typeof el.x !== "number" ||
-      typeof el.width !== "number" ||
-      el.textAlign !== "center" ||
-      el.customData?.textRenderPadding === TEXT_RENDER_PADDING
-    ) {
-      return element;
-    }
+function normalizeCanvasElements<T extends readonly unknown[]>(elements: T): T {
+  const updateElement = (element: unknown, updates: Record<string, unknown>) =>
+    newElementWith(element as never, updates as never);
+  return normalizeArrowGeometry(
+    normalizeTextRenderBounds(elements, updateElement),
+    updateElement
+  );
+}
 
-    return newElementWith(element as never, {
-      x: el.x - TEXT_RENDER_PADDING,
-      width: el.width + TEXT_RENDER_PADDING * 2,
-      customData: {
-        ...(el.customData ?? {}),
-        textRenderPadding: TEXT_RENDER_PADDING,
-      },
-    } as never);
-  }) as unknown as T;
+function refreshCanvasRender(api: ExcalidrawImperativeAPI) {
+  api.refresh();
+  requestAnimationFrame(() => api.refresh());
+  void document.fonts?.ready.then(() => api.refresh());
 }
 
 export default function App() {
@@ -158,8 +144,9 @@ export default function App() {
           return newElementWith(el, { boundElements: merged } as never);
         });
 
-        const next = protectCenteredTextBounds([...patchedExisting, ...newOnes]);
+        const next = normalizeCanvasElements([...patchedExisting, ...newOnes]);
         api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+        refreshCanvasRender(api);
         api.scrollToContent(next, { fitToContent: true });
         // Detect overlaps in the post-add scene and surface them in the
         // tool result so the agent's next reasoning step sees collisions
@@ -180,13 +167,14 @@ export default function App() {
         const byId = new Map(
           updates.map((u) => [u.id, stripNulls(u.fields) as Record<string, unknown>])
         );
-        const next = protectCenteredTextBounds(api.getSceneElements().map((el) => {
+        const next = normalizeCanvasElements(api.getSceneElements().map((el) => {
           const fields = byId.get(el.id);
           return fields && Object.keys(fields).length > 0
             ? newElementWith(el, fields as never)
             : el;
         }));
         api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+        refreshCanvasRender(api);
         addToolOutput({ toolCallId: toolCall.toolCallId, output: { updated: byId.size } });
         return;
       }
@@ -196,6 +184,7 @@ export default function App() {
         const remove = new Set(ids);
         const next = api.getSceneElements().filter((el) => !remove.has(el.id));
         api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+        refreshCanvasRender(api);
         addToolOutput({ toolCallId: toolCall.toolCallId, output: { removed: remove.size } });
         return;
       }

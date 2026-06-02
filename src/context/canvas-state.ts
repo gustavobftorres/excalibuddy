@@ -13,6 +13,8 @@
 // scorer would. Hygiene: read paths and write paths agree.
 
 import { findOverlaps } from "./overlaps";
+import { findLabelRenderRisks } from "./text-rendering";
+import { findArrowAnchorRisks, findUnboundArrows } from "./arrow-geometry";
 
 interface ElementLike {
   id?: unknown;
@@ -126,6 +128,41 @@ export function serializeCanvasState(elements: unknown[]): string {
           .map(([a, b]) => `- ${a} ↔ ${b}`)
           .join("\n")}`
       : "";
+  const labelRenderRisks = findLabelRenderRisks(elements);
+  const labelRenderLines =
+    labelRenderRisks.length > 0
+      ? `\n\nLabels/text that may be clipped or unreadable (widen these text bounds):\n${labelRenderRisks
+          .map(
+            (risk) =>
+              `- ${risk.id} "${risk.text}" width ${Math.round(risk.width)} needs ${Math.round(
+                risk.requiredWidth
+              )}`
+          )
+          .join("\n")}`
+      : "";
+  const unboundArrows = findUnboundArrows(elements);
+  const unboundArrowLines =
+    unboundArrows.length > 0
+      ? `\n\nUnbound arrows (every arrow must point from one shape to another):\n${unboundArrows
+          .map((risk) => `- ${risk.id}: ${risk.reason}`)
+          .join("\n")}`
+      : "";
+  const arrowAnchorRisks = findArrowAnchorRisks(elements);
+  const arrowAnchorLines =
+    arrowAnchorRisks.length > 0
+      ? `\n\nAngled arrows between aligned shapes (straighten them to shape edge centers):\n${arrowAnchorRisks
+          .map(
+            (risk) =>
+              `- ${risk.id}: ${risk.startId} -> ${risk.endId} should be ${risk.axis}; set x=${Math.round(
+                risk.expectedStart.x
+              )}, y=${Math.round(risk.expectedStart.y)}, width=${Math.round(
+                risk.expectedEnd.x - risk.expectedStart.x
+              )}, height=${Math.round(risk.expectedEnd.y - risk.expectedStart.y)}`
+          )
+          .join("\n")}`
+      : "";
 
-  return `Canvas contains ${summary}:\n${lines.join("\n")}${overlapLines}`;
+  return `Canvas contains ${summary}:\n${lines.join(
+    "\n"
+  )}${overlapLines}${labelRenderLines}${unboundArrowLines}${arrowAnchorLines}`;
 }

@@ -80,7 +80,7 @@ export function applyCrossCallBindings<T extends ExistingLike>(
       (arrow as { startBinding: unknown }).startBinding = {
         elementId: startId,
         focus: 0,
-        gap: 8,
+        gap: 1,
       };
       const list = arrowsByTargetId.get(startId) ?? [];
       list.push(skeleton.id);
@@ -96,7 +96,7 @@ export function applyCrossCallBindings<T extends ExistingLike>(
       (arrow as { endBinding: unknown }).endBinding = {
         elementId: endId,
         focus: 0,
-        gap: 8,
+        gap: 1,
       };
       const list = arrowsByTargetId.get(endId) ?? [];
       list.push(skeleton.id);

@@ -16,6 +16,8 @@ import {
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { normalizeTextRenderBounds } from "../context/text-rendering";
+import { normalizeArrowGeometry } from "../context/arrow-geometry";
 
 function extractElements(raw: unknown): unknown[] | null {
   if (Array.isArray(raw)) return raw;
@@ -56,8 +58,13 @@ export default function DiagramViewer() {
     }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const elements = convertToExcalidrawElements(skeleton as any);
+      const elements = normalizeArrowGeometry(
+        normalizeTextRenderBounds(convertToExcalidrawElements(skeleton as any))
+      );
       api.updateScene({ elements });
+      api.refresh();
+      requestAnimationFrame(() => api.refresh());
+      void document.fonts?.ready.then(() => api.refresh());
       api.scrollToContent(elements, { fitToContent: true });
     } catch (e) {
       setError(`Render failed: ${e instanceof Error ? e.message : String(e)}`);
