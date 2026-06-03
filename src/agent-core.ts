@@ -19,6 +19,7 @@ import { applySkeleton } from "./context/applySkeleton";
 import { findOverlaps } from "./context/overlaps";
 import { normalizeTextRenderBounds } from "./context/text-rendering";
 import { normalizeArrowGeometry } from "./context/arrow-geometry";
+import { cascadeRemoveElements } from "./context/remove-elements";
 
 export const SYSTEM_PROMPT = `# Role
 
@@ -220,10 +221,8 @@ export async function runAgent({
       description: baseTools.removeElements.description,
       inputSchema: baseTools.removeElements.inputSchema as never,
       execute: async ({ ids }: { ids: string[] }) => {
-        for (const id of ids) {
-          const idx = sim.findIndex((el) => el.id === id);
-          if (idx >= 0) sim.splice(idx, 1);
-        }
+        const next = cascadeRemoveElements(sim, ids);
+        sim.splice(0, sim.length, ...next);
         return { ids };
       },
     }),
