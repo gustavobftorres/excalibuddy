@@ -390,6 +390,77 @@
     "category": "modify"
   },
   {
+    "id": "modify-remove-labeled-shape",
+    "input": "remove the login box",
+    "seed": {
+      "userPrompt": "draw two rectangles labeled login and database",
+      "assistantConfirmation": "Done. login and database boxes are on the canvas.",
+      "elements": [
+        {
+          "id": "rect_login",
+          "type": "rectangle",
+          "x": 100,
+          "y": 100,
+          "width": 200,
+          "height": 80,
+          "boundElements": [
+            {
+              "id": "rect_login_label",
+              "type": "text"
+            }
+          ]
+        },
+        {
+          "id": "rect_login_label",
+          "type": "text",
+          "x": 100,
+          "y": 100,
+          "width": 200,
+          "height": 80,
+          "text": "login",
+          "containerId": "rect_login"
+        },
+        {
+          "id": "rect_db",
+          "type": "rectangle",
+          "x": 500,
+          "y": 100,
+          "width": 200,
+          "height": 80,
+          "boundElements": [
+            {
+              "id": "rect_db_label",
+              "type": "text"
+            }
+          ]
+        },
+        {
+          "id": "rect_db_label",
+          "type": "text",
+          "x": 500,
+          "y": 100,
+          "width": 200,
+          "height": 80,
+          "text": "database",
+          "containerId": "rect_db"
+        }
+      ]
+    },
+    "expectedCharacteristics": [
+      "1 rectangle element",
+      "1 label",
+      "The remaining box is database"
+    ],
+    "expectedKeywords": [
+      "database"
+    ],
+    "preservedIds": [
+      "rect_db"
+    ],
+    "difficulty": "simple",
+    "category": "modify"
+  },
+  {
     "id": "modify-03",
     "input": "rename the Process box to Validate",
     "seed": {
