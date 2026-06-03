@@ -11,12 +11,20 @@ import type { UIMessage } from "ai";
 import Canvas from "./components/Canvas";
 import ChatPanel from "./components/chat/ChatPanel";
 import { getRetryMessage } from "./components/chat/retry";
+import TrialEndModal from "./components/trial/TrialEndModal";
 import { serializeCanvasState } from "./context/canvas-state";
 import { findOverlaps } from "./context/overlaps";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
 import { cascadeRemoveElements } from "./context/remove-elements";
 import { normalizeTextRenderBounds } from "./context/text-rendering";
 import { normalizeArrowGeometry } from "./context/arrow-geometry";
+import {
+  getTrialStateFromStorage,
+  recordTrialPrompt,
+  shouldBlockAgentPrompts,
+  TRIAL_STORAGE_KEY,
+  type TrialState,
+} from "./trial-state";
 import {
   finalizeTrace,
   getMessageMetadata,
@@ -33,6 +41,8 @@ import "./App.css";
 const sessionId = crypto.randomUUID();
 const agentHost = import.meta.env.VITE_AGENT_HOST;
 const FINAL_TURN_SETTLE_MS = 900;
+const REPOSITORY_URL = "https://github.com/gustavobftorres/excalibuddy";
+const TRIAL_MODAL_DISMISSED_KEY = "excalibuddy-trial-modal-dismissed";
 
 // Recursively drop null valued fields. Our tool schemas use nullable
 // rather than optional so OpenAI strict mode stays on, which means the
@@ -72,6 +82,14 @@ export default function App() {
     useState<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [isChatOpen, setIsChatOpen] = useState(true);
+  const [trialState, setTrialState] = useState<TrialState>(() => {
+    if (typeof window === "undefined") return getTrialStateFromStorage(null);
+    return getTrialStateFromStorage(window.localStorage.getItem(TRIAL_STORAGE_KEY));
+  });
+  const [trialModalDismissed, setTrialModalDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(TRIAL_MODAL_DISMISSED_KEY) === "true";
+  });
   const [feedbackReadyMessageIds, setFeedbackReadyMessageIds] = useState<Set<string>>(new Set());
   const pendingTurnIdRef = useRef<string | undefined>(undefined);
   const finalizedAssistantIdsRef = useRef<Set<string>>(new Set());
@@ -87,6 +105,14 @@ export default function App() {
   const handleApiReady = useCallback((api: ExcalidrawImperativeAPI) => {
     setExcalidrawAPI(api);
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(trialState));
+  }, [trialState]);
+
+  useEffect(() => {
+    window.localStorage.setItem(TRIAL_MODAL_DISMISSED_KEY, String(trialModalDismissed));
+  }, [trialModalDismissed]);
 
   const agent = useAgent({
     agent: "design-agent",
@@ -195,6 +221,17 @@ export default function App() {
 
   const sendMessageWithTrace = useCallback(
     (message: { role: "user"; parts: { type: "text"; text: string }[] }) => {
+      if (shouldBlockAgentPrompts(trialState)) {
+        setTrialModalDismissed(false);
+        return;
+      }
+
+      const nextTrialState = recordTrialPrompt(trialState);
+      setTrialState(nextTrialState);
+      if (nextTrialState.trialEnded) {
+        setTrialModalDismissed(false);
+      }
+
       const turnId = crypto.randomUUID();
       pendingTurnIdRef.current = turnId;
       sendMessage({
@@ -202,7 +239,7 @@ export default function App() {
         metadata: { turnId, sessionId },
       } as UIMessage);
     },
-    [sendMessage]
+    [sendMessage, trialState]
   );
 
   const handleClearCanvas = useCallback(() => {
@@ -229,6 +266,14 @@ export default function App() {
 
   const handleToggleChat = useCallback(() => {
     setIsChatOpen((current) => !current);
+  }, []);
+
+  const handleKeepUsingExcalidraw = useCallback(() => {
+    setTrialModalDismissed(true);
+  }, []);
+
+  const handleCloneRepository = useCallback(() => {
+    window.open(REPOSITORY_URL, "_blank", "noopener,noreferrer");
   }, []);
 
   useEffect(() => {
@@ -270,6 +315,9 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [messages, status, traceApiBaseUrl]);
 
+  const promptingDisabled = shouldBlockAgentPrompts(trialState);
+  const showTrialEndModal = promptingDisabled && !trialModalDismissed && !isStreaming;
+
   return (
     <div className={`app ${theme}`}>
       <div className="canvas-container">
@@ -281,13 +329,21 @@ export default function App() {
         onFeedback={handleFeedback}
         feedbackReadyMessageIds={feedbackReadyMessageIds}
         status={status}
-        canRetry={!isStreaming && retryMessage !== null}
+        canRetry={!isStreaming && !promptingDisabled && retryMessage !== null}
         canClearCanvas={!isStreaming && excalidrawAPI !== null}
         isOpen={isChatOpen}
+        promptingDisabled={promptingDisabled}
+        repositoryUrl={REPOSITORY_URL}
         onRetry={handleRetry}
         onClearCanvas={handleClearCanvas}
         onToggleOpen={handleToggleChat}
       />
+      {showTrialEndModal && (
+        <TrialEndModal
+          onKeepUsingExcalidraw={handleKeepUsingExcalidraw}
+          onCloneRepository={handleCloneRepository}
+        />
+      )}
     </div>
   );
 }
