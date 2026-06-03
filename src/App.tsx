@@ -10,6 +10,7 @@ import { useAgentChat } from "@cloudflare/ai-chat/react";
 import type { UIMessage } from "ai";
 import Canvas from "./components/Canvas";
 import ChatPanel from "./components/chat/ChatPanel";
+import { getRetryMessage } from "./components/chat/retry";
 import { serializeCanvasState } from "./context/canvas-state";
 import { findOverlaps } from "./context/overlaps";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
@@ -70,6 +71,7 @@ export default function App() {
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [isChatOpen, setIsChatOpen] = useState(true);
   const [feedbackReadyMessageIds, setFeedbackReadyMessageIds] = useState<Set<string>>(new Set());
   const pendingTurnIdRef = useRef<string | undefined>(undefined);
   const finalizedAssistantIdsRef = useRef<Set<string>>(new Set());
@@ -203,12 +205,31 @@ export default function App() {
     [sendMessage]
   );
 
+  const handleClearCanvas = useCallback(() => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+    api.updateScene({ elements: [], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    refreshCanvasRender(api);
+  }, []);
+
+  const retryMessage = getRetryMessage(messages);
+  const isStreaming = status === "submitted" || status === "streaming";
+
+  const handleRetry = useCallback(() => {
+    if (!retryMessage) return;
+    sendMessageWithTrace(retryMessage);
+  }, [retryMessage, sendMessageWithTrace]);
+
   const handleFeedback = useCallback(
     async (feedback: UserFeedback) => {
       await sendFeedback(traceApiBaseUrl, feedback);
     },
     [traceApiBaseUrl]
   );
+
+  const handleToggleChat = useCallback(() => {
+    setIsChatOpen((current) => !current);
+  }, []);
 
   useEffect(() => {
     if (status === "submitted" || status === "streaming") return;
@@ -260,10 +281,13 @@ export default function App() {
         onFeedback={handleFeedback}
         feedbackReadyMessageIds={feedbackReadyMessageIds}
         status={status}
+        canRetry={!isStreaming && retryMessage !== null}
+        canClearCanvas={!isStreaming && excalidrawAPI !== null}
+        isOpen={isChatOpen}
+        onRetry={handleRetry}
+        onClearCanvas={handleClearCanvas}
+        onToggleOpen={handleToggleChat}
       />
-      <a href="#viewer" className="viewer-launch" title="Open diagram viewer for human scoring">
-        viewer
-      </a>
     </div>
   );
 }
