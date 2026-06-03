@@ -13,6 +13,7 @@ import ChatPanel from "./components/chat/ChatPanel";
 import { serializeCanvasState } from "./context/canvas-state";
 import { findOverlaps } from "./context/overlaps";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
+import { cascadeRemoveElements } from "./context/remove-elements";
 import { normalizeTextRenderBounds } from "./context/text-rendering";
 import { normalizeArrowGeometry } from "./context/arrow-geometry";
 import {
@@ -181,11 +182,10 @@ export default function App() {
 
       if (toolCall.toolName === "removeElements") {
         const { ids } = toolCall.input as { ids: string[] };
-        const remove = new Set(ids);
-        const next = api.getSceneElements().filter((el) => !remove.has(el.id));
+        const next = cascadeRemoveElements(api.getSceneElements(), ids);
         api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
         refreshCanvasRender(api);
-        addToolOutput({ toolCallId: toolCall.toolCallId, output: { removed: remove.size } });
+        addToolOutput({ toolCallId: toolCall.toolCallId, output: { removed: ids.length } });
         return;
       }
     },
