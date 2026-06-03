@@ -99,3 +99,121 @@
 .viewer-canvas {
   flex: 1;
 }
+
+.trial-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(10px);
+}
+
+.trial-modal {
+  width: min(560px, 100%);
+  padding: 28px;
+  border: 1px solid rgba(251, 146, 60, 0.28);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 237, 213, 0.95), rgba(255, 255, 255, 0.98) 42%),
+    #fff;
+  box-shadow: 0 32px 80px rgba(15, 23, 42, 0.22);
+  color: #111827;
+}
+
+.trial-modal-kicker {
+  display: inline-flex;
+  margin-bottom: 14px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.12);
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trial-modal h2 {
+  margin: 0 0 12px;
+  font-size: clamp(28px, 4vw, 36px);
+  line-height: 1.05;
+}
+
+.trial-modal p {
+  margin: 0;
+  color: #4b5563;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.trial-modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.trial-modal-primary,
+.trial-modal-secondary {
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.trial-modal-primary {
+  border: 1px solid #ea580c;
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: #fff;
+}
+
+.trial-modal-secondary {
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(255, 255, 255, 0.9);
+  color: #111827;
+}
+
+.trial-modal-primary:hover,
+.trial-modal-secondary:hover {
+  transform: translateY(-1px);
+}
+
+.app.dark .trial-modal {
+  border-color: rgba(251, 146, 60, 0.22);
+  background:
+    radial-gradient(circle at top left, rgba(124, 45, 18, 0.55), rgba(24, 24, 27, 0.98) 42%),
+    #18181b;
+  color: #f9fafb;
+}
+
+.app.dark .trial-modal-kicker {
+  background: rgba(251, 146, 60, 0.18);
+  color: #fdba74;
+}
+
+.app.dark .trial-modal p {
+  color: #d4d4d8;
+}
+
+.app.dark .trial-modal-secondary {
+  border-color: rgba(113, 113, 122, 0.7);
+  background: rgba(39, 39, 42, 0.9);
+  color: #f9fafb;
+}
+
+@media (max-width: 640px) {
+  .trial-modal {
+    padding: 22px;
+    border-radius: 20px;
+  }
+
+  .trial-modal-actions {
+    flex-direction: column;
+  }
+}

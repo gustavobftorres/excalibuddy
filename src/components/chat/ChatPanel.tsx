@@ -13,6 +13,8 @@ interface ChatPanelProps {
   canRetry: boolean;
   canClearCanvas: boolean;
   isOpen: boolean;
+  promptingDisabled: boolean;
+  repositoryUrl: string;
   onRetry: () => void;
   onClearCanvas: () => void;
   onToggleOpen: () => void;
@@ -27,6 +29,8 @@ export default function ChatPanel({
   canRetry,
   canClearCanvas,
   isOpen,
+  promptingDisabled,
+  repositoryUrl,
   onRetry,
   onClearCanvas,
   onToggleOpen,
@@ -43,7 +47,7 @@ export default function ChatPanel({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (promptingDisabled || !input.trim()) return;
     sendMessage({
       role: "user",
       parts: [{ type: "text", text: input }],
@@ -84,20 +88,33 @@ export default function ChatPanel({
           onFeedback={onFeedback}
           feedbackReadyMessageIds={feedbackReadyMessageIds}
         />
+        {promptingDisabled && (
+          <p className="chat-trial-note">
+            Hosted AI prompting is no longer available here. You can keep editing manually, or{" "}
+            <a href={repositoryUrl} target="_blank" rel="noreferrer">
+              clone the repository to use it locally
+            </a>
+            .
+          </p>
+        )}
         <form className="chat-input-form" onSubmit={handleSubmit}>
           <textarea
             ref={textareaRef}
             className="chat-input"
-            placeholder="Describe a diagram..."
+            placeholder={
+              promptingDisabled
+                ? "Hosted AI prompting has ended for this browser."
+                : "Describe a diagram..."
+            }
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            disabled={isStreaming}
+            disabled={isStreaming || promptingDisabled}
             rows={1}
           />
           <button
             type="submit"
             className="chat-send-btn"
-            disabled={isStreaming || !input.trim()}
+            disabled={isStreaming || promptingDisabled || !input.trim()}
             aria-label={isStreaming ? "Sending" : "Send message"}
           >
             {isStreaming ? (
