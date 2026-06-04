@@ -14,6 +14,7 @@ import { updateElements } from "./tools/update-elements";
 import { queryCanvas } from "./tools/query-canvas";
 import { makeSearchWeb } from "./tools/search-web";
 import { makeSearchKnowledge } from "./tools/search-knowledge";
+import { requestPlanApproval } from "./tools/request-plan-approval";
 
 export interface ToolEnv {
   TAVILY_API_KEY?: string;
@@ -35,3 +36,13 @@ export function buildTools(env: ToolEnv) {
   };
 }
 
+export function buildPlanningTools(env: ToolEnv) {
+  return {
+    requestPlanApproval,
+    searchWeb: makeSearchWeb(env.TAVILY_API_KEY),
+    searchKnowledge: makeSearchKnowledge({
+      UPSTASH_VECTOR_REST_URL: env.UPSTASH_VECTOR_REST_URL,
+      UPSTASH_VECTOR_REST_TOKEN: env.UPSTASH_VECTOR_REST_TOKEN,
+    }),
+  };
+}

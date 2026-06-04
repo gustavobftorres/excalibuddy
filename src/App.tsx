@@ -12,6 +12,9 @@ import Canvas from "./components/Canvas";
 import ChatPanel from "./components/chat/ChatPanel";
 import { getRetryMessage } from "./components/chat/retry";
 import TrialEndModal from "./components/trial/TrialEndModal";
+import { getLatestPlanApprovalMessage } from "./planning/messages";
+import { buildApprovedPlanPrompt, shouldStartInPlanningMode } from "./planning/session";
+import type { PlanApprovalPayload } from "./planning/types";
 import { serializeCanvasState } from "./context/canvas-state";
 import { findOverlaps } from "./context/overlaps";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
@@ -44,6 +47,7 @@ const FINAL_TURN_SETTLE_MS = 900;
 const REPOSITORY_URL = "https://github.com/gustavobftorres/excalibuddy";
 const TRIAL_MODAL_DISMISSED_KEY = "excalibuddy-trial-modal-dismissed";
 const ONBOARDING_DISMISSED_KEY = "excalibuddy-onboarding-dismissed";
+const PLANNING_MODE_ENABLED_KEY = "excalibuddy-planning-mode-enabled";
 const TEST_PROMPT =
   "Create a simple flowchart for a bug fix workflow: Bug report -> Reproduce -> Fix -> Review -> Deploy.";
 const SUGGESTED_PROMPTS = [
@@ -90,6 +94,16 @@ export default function App() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState("");
+  const [planningModeEnabled, setPlanningModeEnabled] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const stored = window.localStorage.getItem(PLANNING_MODE_ENABLED_KEY);
+    return stored === null ? true : stored === "true";
+  });
+  const [agentMode, setAgentMode] = useState<"planning" | "build">("build");
+  const [planningModeNotice, setPlanningModeNotice] = useState<string | null>(null);
+  const [pendingPlanApproval, setPendingPlanApproval] = useState<PlanApprovalPayload | null>(null);
+  const [pendingPlanApprovalId, setPendingPlanApprovalId] = useState<string | null>(null);
+  const [lastCreatePrompt, setLastCreatePrompt] = useState<string | null>(null);
   const [trialState, setTrialState] = useState<TrialState>(() => {
     if (typeof window === "undefined") return getTrialStateFromStorage(null);
     return getTrialStateFromStorage(window.localStorage.getItem(TRIAL_STORAGE_KEY));
@@ -104,7 +118,9 @@ export default function App() {
   });
   const [feedbackReadyMessageIds, setFeedbackReadyMessageIds] = useState<Set<string>>(new Set());
   const pendingTurnIdRef = useRef<string | undefined>(undefined);
+  const pendingAssistantMessageIdRef = useRef<string | undefined>(undefined);
   const finalizedAssistantIdsRef = useRef<Set<string>>(new Set());
+  const resolvedPlanToolCallIdsRef = useRef<Set<string>>(new Set());
   const traceApiBaseUrl = getTraceApiBaseUrl(agentHost);
 
   // Hold the latest excalidrawAPI in a ref so onToolCall (captured once at
@@ -130,6 +146,10 @@ export default function App() {
     window.localStorage.setItem(ONBOARDING_DISMISSED_KEY, String(onboardingDismissed));
   }, [onboardingDismissed]);
 
+  useEffect(() => {
+    window.localStorage.setItem(PLANNING_MODE_ENABLED_KEY, String(planningModeEnabled));
+  }, [planningModeEnabled]);
+
   const agent = useAgent({
     agent: "design-agent",
     name: sessionId,
@@ -141,12 +161,34 @@ export default function App() {
   // addToolOutput so the agent loop resumes.
   const { messages, sendMessage, status } = useAgentChat({
     agent,
+    generateId: () => pendingAssistantMessageIdRef.current ?? crypto.randomUUID(),
     body: () => ({
       sessionId,
       turnId: pendingTurnIdRef.current,
+      assistantMessageId: pendingAssistantMessageIdRef.current,
+      mode: planningModeEnabled ? "planning" : agentMode,
     }),
     onToolCall: async ({ toolCall, addToolOutput }) => {
       const api = excalidrawAPIRef.current;
+      if (
+        planningModeEnabled &&
+        (toolCall.toolName === "queryCanvas" ||
+          toolCall.toolName === "addElements" ||
+          toolCall.toolName === "updateElements" ||
+          toolCall.toolName === "removeElements")
+      ) {
+        setPlanningModeNotice(
+          "Planning mode is still on. Turn it off to let the agent modify the canvas."
+        );
+        addToolOutput({
+          toolCallId: toolCall.toolCallId,
+          output: {
+            error: "planning mode enabled; disable it before executing the plan",
+          },
+        });
+        return;
+      }
+
       if (!api) {
         addToolOutput({ toolCallId: toolCall.toolCallId, output: { error: "canvas not ready" } });
         return;
@@ -235,8 +277,23 @@ export default function App() {
     },
   });
 
+  useEffect(() => {
+    const latestPlanApproval = getLatestPlanApprovalMessage(messages);
+    if (!latestPlanApproval) return;
+    if (resolvedPlanToolCallIdsRef.current.has(latestPlanApproval.toolCallId)) return;
+    if (pendingPlanApprovalId === latestPlanApproval.toolCallId) return;
+
+    setPendingPlanApproval(latestPlanApproval.plan);
+    setPendingPlanApprovalId(latestPlanApproval.toolCallId);
+    setAgentMode("planning");
+    setPlanningModeNotice(null);
+  }, [messages, pendingPlanApprovalId]);
+
   const sendMessageWithTrace = useCallback(
-    (message: { role: "user"; parts: { type: "text"; text: string }[] }) => {
+    (
+      message: { role: "user"; parts: { type: "text"; text: string }[] },
+      overrideMode?: "planning" | "build"
+    ) => {
       if (shouldBlockAgentPrompts(trialState)) {
         setTrialModalDismissed(false);
         return;
@@ -248,14 +305,54 @@ export default function App() {
         setTrialModalDismissed(false);
       }
 
+      const sceneElementCount = excalidrawAPIRef.current?.getSceneElements().length ?? 0;
+      const continuePlanning =
+        planningModeEnabled ||
+        (agentMode === "planning" && sceneElementCount === 0 && pendingPlanApproval === null);
+      const nextMode =
+        overrideMode ??
+        (continuePlanning
+          ? "planning"
+          : shouldStartInPlanningMode({
+              sceneElementCount,
+              planningModeEnabled,
+              hasPriorAssistantMessages: messages.some((entry) => entry.role === "assistant"),
+              pendingPlanApproval: pendingPlanApproval !== null,
+            })
+            ? "planning"
+            : "build");
+
+      setPlanningModeNotice(null);
+
+      if (nextMode === "planning" && lastCreatePrompt === null) {
+        setLastCreatePrompt(message.parts[0]?.text ?? "");
+      }
+
+      if (overrideMode === "planning" || nextMode === "planning") {
+        setPendingPlanApproval(null);
+      }
+      setAgentMode(nextMode);
+
       const turnId = crypto.randomUUID();
+      const userMessageId = `user-${turnId}`;
+      const assistantMessageId = `assistant-${turnId}`;
       pendingTurnIdRef.current = turnId;
+      pendingAssistantMessageIdRef.current = assistantMessageId;
       sendMessage({
         ...message,
+        id: userMessageId,
         metadata: { turnId, sessionId },
       } as UIMessage);
     },
-    [sendMessage, trialState]
+    [
+      agentMode,
+      lastCreatePrompt,
+      messages,
+      pendingPlanApproval,
+      planningModeEnabled,
+      sendMessage,
+      trialState,
+    ]
   );
 
   const handleClearCanvas = useCallback(() => {
@@ -272,6 +369,59 @@ export default function App() {
     if (!retryMessage) return;
     sendMessageWithTrace(retryMessage);
   }, [retryMessage, sendMessageWithTrace]);
+
+  const handleApprovePlan = useCallback(() => {
+    if (!pendingPlanApproval || !lastCreatePrompt) return;
+
+    if (planningModeEnabled) {
+      setPlanningModeNotice(
+        "Turn off Planning mode to execute this approved plan on the canvas."
+      );
+      return;
+    }
+
+    const approvedPlanPrompt = buildApprovedPlanPrompt({
+      originalPrompt: lastCreatePrompt,
+      plan: pendingPlanApproval,
+    });
+
+    setPendingPlanApproval(null);
+    if (pendingPlanApprovalId) {
+      resolvedPlanToolCallIdsRef.current.add(pendingPlanApprovalId);
+      setPendingPlanApprovalId(null);
+    }
+    setAgentMode("build");
+    setPlanningModeNotice(null);
+    void sendMessageWithTrace(
+      {
+        role: "user",
+        parts: [{ type: "text", text: approvedPlanPrompt }],
+      },
+      "build"
+    );
+  }, [lastCreatePrompt, pendingPlanApproval, pendingPlanApprovalId, sendMessageWithTrace]);
+
+  const handleRequestPlanChanges = useCallback(() => {
+    setPendingPlanApproval(null);
+    if (pendingPlanApprovalId) {
+      resolvedPlanToolCallIdsRef.current.add(pendingPlanApprovalId);
+      setPendingPlanApprovalId(null);
+    }
+    setAgentMode("planning");
+    setPlanningModeNotice(null);
+    setDraftPrompt("Please revise the plan: ");
+  }, [pendingPlanApprovalId]);
+
+  const handlePlanningModeToggle = useCallback((enabled: boolean) => {
+    setPlanningModeEnabled(enabled);
+    if (!enabled) {
+      setPlanningModeNotice(null);
+      setAgentMode("build");
+      return;
+    }
+    setAgentMode("planning");
+    setPlanningModeNotice("Planning mode is on. Turn it off when you want to execute a plan.");
+  }, []);
 
   const handleFeedback = useCallback(
     async (feedback: UserFeedback) => {
@@ -416,9 +566,16 @@ export default function App() {
         canRetry={!isStreaming && !promptingDisabled && retryMessage !== null}
         canClearCanvas={!isStreaming && excalidrawAPI !== null}
         isOpen={isChatOpen}
+        planningModeEnabled={planningModeEnabled}
+        planningModeActive={planningModeEnabled || agentMode === "planning"}
+        planningModeNotice={planningModeNotice}
+        pendingPlanApproval={pendingPlanApproval}
         promptingDisabled={promptingDisabled}
         draftPrompt={draftPrompt}
         repositoryUrl={REPOSITORY_URL}
+        onApprovePlan={handleApprovePlan}
+        onPlanningModeToggle={handlePlanningModeToggle}
+        onRequestPlanChanges={handleRequestPlanChanges}
         onRetry={handleRetry}
         onClearCanvas={handleClearCanvas}
         onToggleOpen={handleToggleChat}
