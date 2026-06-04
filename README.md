@@ -1,4 +1,7 @@
-# Excalibuddy
+<h1 align="center">
+  Excalibuddy
+  <img src="./assets/excalilogo.png" alt="Excalibuddy logo" width="48" />
+</h1>
 
 AI Agent to build native diagrams on Excalidraw, all by prompting and giving life to your ideas.
 
