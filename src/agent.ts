@@ -1,7 +1,8 @@
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import { convertToModelMessages, type StreamTextOnFinishCallback, type UIMessage } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { streamAgent } from "./agent-core";
+import { streamAgent, streamPlanningAgent } from "./agent-core";
+import { buildUIMessageStreamResponseOptions } from "./agent-stream-options";
 import { insertProjectLog, shouldLogTraces } from "./observability/braintrust";
 import type { ChatMessageMetadata, TraceToolCall } from "./flywheel/types";
 
@@ -69,10 +70,15 @@ export class DesignAgent extends AIChatAgent<Env> {
       typeof options?.body?.turnId === "string"
         ? options.body.turnId
         : latestUserMetadata.turnId ?? options?.requestId ?? crypto.randomUUID();
+    const mode = options?.body?.mode === "planning" ? "planning" : "build";
     const sessionId =
       typeof options?.body?.sessionId === "string"
         ? options.body.sessionId
         : latestUserMetadata.sessionId ?? "unknown";
+    const assistantMessageId =
+      typeof options?.body?.assistantMessageId === "string"
+        ? options.body.assistantMessageId
+        : undefined;
     const start = Date.now();
 
     const logOnFinish: StreamTextOnFinishCallback<any> = async (event) => {
@@ -117,7 +123,7 @@ export class DesignAgent extends AIChatAgent<Env> {
       await onFinish?.(event);
     };
 
-    const result = streamAgent({
+    const agentArgs = {
       model,
       messages,
       onFinish: logOnFinish,
@@ -126,15 +132,12 @@ export class DesignAgent extends AIChatAgent<Env> {
         UPSTASH_VECTOR_REST_URL: this.env.UPSTASH_VECTOR_REST_URL,
         UPSTASH_VECTOR_REST_TOKEN: this.env.UPSTASH_VECTOR_REST_TOKEN,
       },
-    });
+    };
 
-    return result.toUIMessageStreamResponse({
-      messageMetadata: ({ part }) => {
-        if (part.type === "start" || part.type === "finish") {
-          return { turnId, sessionId };
-        }
-        return undefined;
-      },
-    });
+    const result = mode === "planning" ? streamPlanningAgent(agentArgs) : streamAgent(agentArgs);
+
+    return result.toUIMessageStreamResponse(
+      buildUIMessageStreamResponseOptions(this.messages, turnId, sessionId, assistantMessageId)
+    );
   }
 }

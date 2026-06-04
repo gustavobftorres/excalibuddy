@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { UIMessage } from "ai";
 import MarkdownRenderer from "./MarkdownRenderer";
 import ToolStatus from "../streaming/ToolStatus";
+import PlanApprovalCard from "../hitl/PlanApprovalCard";
+import type { PlanApprovalPayload } from "../../planning/types";
 import { getMessageMetadata } from "../../flywheel/client";
 import type { UserFeedback } from "../../flywheel/types";
 import "../streaming/streaming.css";
@@ -16,6 +18,10 @@ export default function MessageBubble({ message, onFeedback, feedbackReady }: Me
   const [feedbackState, setFeedbackState] = useState<"idle" | "commenting" | "submitted">("idle");
   const [comment, setComment] = useState("");
   const metadata = getMessageMetadata(message);
+  const hasPlanApprovalTool = (message.parts ?? []).some(
+    (part) => part.type === "tool-requestPlanApproval"
+  );
+  const seenAssistantTextParts = new Set<string>();
 
   const submitFeedback = async (rating: 1 | 0, feedbackComment?: string) => {
     if (!metadata.turnId || !metadata.sessionId) return;
@@ -38,6 +44,13 @@ export default function MessageBubble({ message, onFeedback, feedbackReady }: Me
         {message.parts?.map((part, i) => {
           // Plain text part
           if (part.type === "text") {
+            if (message.role === "assistant" && hasPlanApprovalTool) return null;
+            if (message.role === "assistant") {
+              const normalizedText = part.text.trim();
+              if (normalizedText.length === 0) return null;
+              if (seenAssistantTextParts.has(normalizedText)) return null;
+              seenAssistantTextParts.add(normalizedText);
+            }
             if (message.role === "assistant") {
               return <MarkdownRenderer key={i} content={part.text} />;
             }
@@ -47,13 +60,20 @@ export default function MessageBubble({ message, onFeedback, feedbackReady }: Me
           // Tool call part: type is `tool-<toolName>` (e.g. tool-generateDiagram)
           if (part.type?.startsWith("tool-")) {
             const toolName = part.type.replace("tool-", "");
-            const toolPart = part as { state?: string };
+            const toolPart = part as { state?: string; input?: unknown };
             const status =
               toolPart.state === "output-available"
                 ? "complete"
                 : toolPart.state === "output-error"
                   ? "error"
                   : "running";
+            if (
+              toolName === "requestPlanApproval" &&
+              toolPart.state === "output-available" &&
+              toolPart.input
+            ) {
+              return <PlanApprovalCard key={i} plan={toolPart.input as PlanApprovalPayload} />;
+            }
             return <ToolStatus key={i} name={toolName} status={status} />;
           }
 

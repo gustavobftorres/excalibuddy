@@ -11,6 +11,13 @@ Build based on [AI Engineering Fundamentals](https://frontendmasters.com/courses
 
 ![The diagram design tool](./assets/screenshot.png)
 
+## Create flow
+
+1. User describes the diagram.
+2. Excalibuddy enters planning mode, asks clarifying questions if needed, and proposes a build plan.
+3. The user approves the plan.
+4. Only then does the agent call the canvas tools to draw the diagram.
+
 ## Setup
 
 ### 1. Clone and install

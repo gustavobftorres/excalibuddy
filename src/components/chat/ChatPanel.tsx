@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { UIMessage } from "ai";
 import MessageList from "./MessageList";
 import type { UserFeedback } from "../../flywheel/types";
+import type { PlanApprovalPayload } from "../../planning/types";
+import PlanApprovalCard from "../hitl/PlanApprovalCard";
 import excaliLogo from "../../../assets/excalilogo.png";
 import "./chat.css";
+import "../hitl/hitl.css";
 
 interface ChatPanelProps {
   messages: UIMessage[];
@@ -14,9 +17,16 @@ interface ChatPanelProps {
   canRetry: boolean;
   canClearCanvas: boolean;
   isOpen: boolean;
+  planningModeEnabled: boolean;
+  planningModeActive: boolean;
+  planningModeNotice?: string | null;
+  pendingPlanApproval: PlanApprovalPayload | null;
   promptingDisabled: boolean;
   draftPrompt?: string;
   repositoryUrl: string;
+  onApprovePlan: () => void;
+  onPlanningModeToggle: (enabled: boolean) => void;
+  onRequestPlanChanges: () => void;
   onRetry: () => void;
   onClearCanvas: () => void;
   onToggleOpen: () => void;
@@ -32,9 +42,16 @@ export default function ChatPanel({
   canRetry,
   canClearCanvas,
   isOpen,
+  planningModeEnabled,
+  planningModeActive,
+  planningModeNotice,
+  pendingPlanApproval,
   promptingDisabled,
   draftPrompt,
   repositoryUrl,
+  onApprovePlan,
+  onPlanningModeToggle,
+  onRequestPlanChanges,
   onRetry,
   onClearCanvas,
   onToggleOpen,
@@ -98,6 +115,7 @@ export default function ChatPanel({
             </div>
           </div>
         </div>
+        {planningModeNotice && <p className="chat-planning-note">{planningModeNotice}</p>}
         <MessageList
           messages={messages}
           onFeedback={onFeedback}
@@ -119,7 +137,9 @@ export default function ChatPanel({
             placeholder={
               promptingDisabled
                 ? "Hosted AI prompting has ended for this browser."
-                : "Describe a diagram..."
+                : planningModeActive
+                  ? "Clarify the diagram requirements..."
+                  : "Describe a diagram..."
             }
             value={input}
             onChange={(e) => {
@@ -129,28 +149,66 @@ export default function ChatPanel({
             disabled={isStreaming || promptingDisabled}
             rows={1}
           />
-          <button
-            type="submit"
-            className="chat-send-btn"
-            disabled={isStreaming || promptingDisabled || !input.trim()}
-            aria-label={isStreaming ? "Sending" : "Send message"}
-          >
-            {isStreaming ? (
-              <span className="chat-send-dots" aria-hidden="true">
-                ...
-              </span>
-            ) : (
-              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="chat-send-icon">
-                <path
-                  d="M4 10H16M16 10L11 5M16 10L11 15"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            )}
-          </button>
+          <div className="chat-input-actions">
+            <div className="chat-input-actions-left">
+              <label className="chat-planning-toggle" aria-label="Toggle planning mode">
+                <span className="chat-planning-toggle-label">Planning mode</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={planningModeEnabled}
+                  aria-label={`Planning mode ${planningModeEnabled ? "enabled" : "disabled"}`}
+                  className={`chat-switch ${planningModeEnabled ? "on" : "off"} ${planningModeActive ? "active" : ""}`}
+                  onClick={() => onPlanningModeToggle(!planningModeEnabled)}
+                  disabled={isStreaming || promptingDisabled}
+                >
+                  <span className="chat-switch-thumb" />
+                </button>
+              </label>
+              {pendingPlanApproval && (
+                <div className="chat-plan-actions">
+                  <button
+                    type="button"
+                    className="chat-inline-action chat-inline-approve"
+                    onClick={onApprovePlan}
+                    disabled={isStreaming || promptingDisabled}
+                  >
+                    Approve plan
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-inline-action chat-inline-reject"
+                    onClick={onRequestPlanChanges}
+                    disabled={isStreaming || promptingDisabled}
+                  >
+                    Request changes
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              type="submit"
+              className="chat-send-btn"
+              disabled={isStreaming || promptingDisabled || !input.trim()}
+              aria-label={isStreaming ? "Sending" : "Send message"}
+            >
+              {isStreaming ? (
+                <span className="chat-send-dots" aria-hidden="true">
+                  ...
+                </span>
+              ) : (
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="chat-send-icon">
+                  <path
+                    d="M4 10H16M16 10L11 5M16 10L11 15"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </button>
+          </div>
         </form>
       </aside>
       <button

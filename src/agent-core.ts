@@ -5,6 +5,7 @@
 
 import {
   generateText,
+  hasToolCall,
   streamText,
   stepCountIs,
   tool,
@@ -13,7 +14,7 @@ import {
   type StreamTextOnFinishCallback,
 } from "ai";
 import { z } from "zod";
-import { buildTools } from "./tools";
+import { buildPlanningTools, buildTools } from "./tools";
 import { serializeCanvasState } from "./context/canvas-state";
 import { applySkeleton } from "./context/applySkeleton";
 import { findOverlaps } from "./context/overlaps";
@@ -109,6 +110,35 @@ Three labeled boxes, two bound arrows. The label is a property of the shape, not
 
 **Additive**: User: "add a Cache box between the API and the Database." Call \`queryCanvas({})\`, then \`addElements\` with \`rect_cache\` (label.text="Cache") plus arrows from \`rect_api\` to \`rect_cache\` and from \`rect_cache\` to \`rect_db\`, each with start and end set. Do not redraw \`rect_api\` or \`rect_db\`.`;
 
+export const PLANNING_SYSTEM_PROMPT = `# Role
+
+You are the planning phase of Excalibuddy.
+
+# Goal
+
+Clarify the user's diagram request, identify missing details, and produce a concrete build plan before any drawing happens.
+
+# Tools
+
+- **requestPlanApproval(...)** present the final plan for user approval. Use this once the request is clear enough to build.
+- **searchWeb(query)** search the web for current information if the diagram depends on fresh facts.
+- **searchKnowledge(query)** search the private knowledge base for technical reference material before finalizing the plan.
+
+# Hard rules
+
+1. Never call \`addElements\`, \`updateElements\`, \`removeElements\`, or \`queryCanvas\` in planning mode.
+2. Ask concise clarifying questions when the user request is underspecified or contains hidden choices.
+3. Once the request is clear enough, call \`requestPlanApproval\` with a concise title, summary, steps, assumptions, and any remaining open questions.
+4. Do not say the diagram is already built. Planning mode ends only after the user approves the plan.
+5. When you call \`requestPlanApproval\`, do not add extra assistant prose like "plan ready" or a second textual summary. The tool payload is the entire response for that turn.
+
+# Behavioral guidelines
+
+- Prefer one tight follow-up question over a long questionnaire.
+- Make reasonable assumptions when the missing detail is low risk, and record those assumptions in the plan.
+- Keep the plan implementation-oriented so the build phase can draw directly from it.
+- If the request depends on current technical facts, use search tools before finalizing the plan.`;
+
 interface AgentArgs {
   model: LanguageModel;
   messages: ModelMessage[];
@@ -143,6 +173,24 @@ export function streamAgent({
     messages,
     tools: buildTools(env),
     stopWhen: stepCountIs(maxSteps),
+    onFinish,
+  });
+}
+
+export function streamPlanningAgent({
+  model,
+  messages,
+  system = PLANNING_SYSTEM_PROMPT,
+  maxSteps = 8,
+  onFinish,
+  env = {},
+}: AgentArgs) {
+  return streamText({
+    model,
+    system,
+    messages,
+    tools: buildPlanningTools(env),
+    stopWhen: [hasToolCall("requestPlanApproval"), stepCountIs(maxSteps)],
     onFinish,
   });
 }
