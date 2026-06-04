@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { UIMessage } from "ai";
 import MessageList from "./MessageList";
 import type { UserFeedback } from "../../flywheel/types";
+import excaliLogo from "../../../assets/excalilogo.png";
 import "./chat.css";
 
 interface ChatPanelProps {
@@ -14,10 +15,12 @@ interface ChatPanelProps {
   canClearCanvas: boolean;
   isOpen: boolean;
   promptingDisabled: boolean;
+  draftPrompt?: string;
   repositoryUrl: string;
   onRetry: () => void;
   onClearCanvas: () => void;
   onToggleOpen: () => void;
+  onDraftPromptChange?: (value: string) => void;
 }
 
 export default function ChatPanel({
@@ -30,10 +33,12 @@ export default function ChatPanel({
   canClearCanvas,
   isOpen,
   promptingDisabled,
+  draftPrompt,
   repositoryUrl,
   onRetry,
   onClearCanvas,
   onToggleOpen,
+  onDraftPromptChange,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -45,6 +50,12 @@ export default function ChatPanel({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
   }, [input]);
 
+  useEffect(() => {
+    if (draftPrompt === undefined || draftPrompt === input) return;
+    setInput(draftPrompt);
+    textareaRef.current?.focus();
+  }, [draftPrompt, input]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (promptingDisabled || !input.trim()) return;
@@ -53,6 +64,7 @@ export default function ChatPanel({
       parts: [{ type: "text", text: input }],
     });
     setInput("");
+    onDraftPromptChange?.("");
   };
 
   const isStreaming = status === "submitted" || status === "streaming";
@@ -62,7 +74,10 @@ export default function ChatPanel({
       <aside className={`chat-panel ${isOpen ? "open" : "closed"}`}>
         <div className="chat-header">
           <div className="chat-header-row">
-            <h2>Chat</h2>
+            <div className="chat-header-title">
+              <h2>Chat</h2>
+              <img src={excaliLogo} alt="Excalibuddy logo" className="chat-header-logo" />
+            </div>
             <div className="chat-header-actions">
               <button
                 type="button"
@@ -107,7 +122,10 @@ export default function ChatPanel({
                 : "Describe a diagram..."
             }
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              onDraftPromptChange?.(e.target.value);
+            }}
             disabled={isStreaming || promptingDisabled}
             rows={1}
           />

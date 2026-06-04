@@ -43,6 +43,13 @@ const agentHost = import.meta.env.VITE_AGENT_HOST;
 const FINAL_TURN_SETTLE_MS = 900;
 const REPOSITORY_URL = "https://github.com/gustavobftorres/excalibuddy";
 const TRIAL_MODAL_DISMISSED_KEY = "excalibuddy-trial-modal-dismissed";
+const ONBOARDING_DISMISSED_KEY = "excalibuddy-onboarding-dismissed";
+const TEST_PROMPT =
+  "Create a simple flowchart for a bug fix workflow: Bug report -> Reproduce -> Fix -> Review -> Deploy.";
+const SUGGESTED_PROMPTS = [
+  "Map a startup org chart with CEO, Product, Engineering, Design, and Sales.",
+  "Create a system design diagram for a web app with frontend, API, database, and cache.",
+];
 
 // Recursively drop null valued fields. Our tool schemas use nullable
 // rather than optional so OpenAI strict mode stays on, which means the
@@ -81,7 +88,8 @@ export default function App() {
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [draftPrompt, setDraftPrompt] = useState("");
   const [trialState, setTrialState] = useState<TrialState>(() => {
     if (typeof window === "undefined") return getTrialStateFromStorage(null);
     return getTrialStateFromStorage(window.localStorage.getItem(TRIAL_STORAGE_KEY));
@@ -89,6 +97,10 @@ export default function App() {
   const [trialModalDismissed, setTrialModalDismissed] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(TRIAL_MODAL_DISMISSED_KEY) === "true";
+  });
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "true";
   });
   const [feedbackReadyMessageIds, setFeedbackReadyMessageIds] = useState<Set<string>>(new Set());
   const pendingTurnIdRef = useRef<string | undefined>(undefined);
@@ -113,6 +125,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(TRIAL_MODAL_DISMISSED_KEY, String(trialModalDismissed));
   }, [trialModalDismissed]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ONBOARDING_DISMISSED_KEY, String(onboardingDismissed));
+  }, [onboardingDismissed]);
 
   const agent = useAgent({
     agent: "design-agent",
@@ -268,6 +284,17 @@ export default function App() {
     setIsChatOpen((current) => !current);
   }, []);
 
+  const handleApplyOnboardingPrompt = useCallback((prompt: string) => {
+    setDraftPrompt(prompt);
+    setOnboardingDismissed(true);
+    setIsChatOpen(true);
+  }, []);
+
+  const handleDismissOnboarding = useCallback(() => {
+    setOnboardingDismissed(true);
+    setIsChatOpen(true);
+  }, []);
+
   const handleKeepUsingExcalidraw = useCallback(() => {
     setTrialModalDismissed(true);
   }, []);
@@ -317,11 +344,68 @@ export default function App() {
 
   const promptingDisabled = shouldBlockAgentPrompts(trialState);
   const showTrialEndModal = promptingDisabled && !trialModalDismissed && !isStreaming;
+  const showOnboarding = messages.length === 0 && !onboardingDismissed;
 
   return (
     <div className={`app ${theme}`}>
       <div className="canvas-container">
         <Canvas onApiReady={handleApiReady} onThemeChange={setTheme} />
+        {showOnboarding && (
+          <section className="canvas-onboarding">
+            <div className="canvas-onboarding-grid">
+              <div className="canvas-onboarding-copy">
+                <span className="canvas-onboarding-kicker">Excalibuddy</span>
+                <h1>Describe the diagram. Watch it appear on the canvas.</h1>
+                <p>
+                  Excalibuddy turns simple prompts into native Excalidraw shapes, arrows,
+                  and labels. Great for flowcharts, architecture sketches, org charts, and
+                  process maps.
+                </p>
+                <div className="canvas-onboarding-actions">
+                  <button
+                    type="button"
+                    className="canvas-onboarding-primary"
+                    onClick={() => handleApplyOnboardingPrompt(TEST_PROMPT)}
+                  >
+                    Try a sample prompt
+                  </button>
+                  <button
+                    type="button"
+                    className="canvas-onboarding-secondary"
+                    onClick={handleDismissOnboarding}
+                  >
+                    Skip intro
+                  </button>
+                </div>
+              </div>
+              <div className="canvas-onboarding-prompts">
+                <div className="canvas-onboarding-callout">
+                  <span className="canvas-onboarding-label">Suggested test prompt</span>
+                  <button
+                    type="button"
+                    className="canvas-onboarding-card canvas-onboarding-card-featured"
+                    onClick={() => handleApplyOnboardingPrompt(TEST_PROMPT)}
+                  >
+                    {TEST_PROMPT}
+                  </button>
+                </div>
+                <div className="canvas-onboarding-callout">
+                  <span className="canvas-onboarding-label">More ideas</span>
+                  {SUGGESTED_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      className="canvas-onboarding-card"
+                      onClick={() => handleApplyOnboardingPrompt(prompt)}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
       </div>
       <ChatPanel
         messages={messages}
@@ -333,10 +417,12 @@ export default function App() {
         canClearCanvas={!isStreaming && excalidrawAPI !== null}
         isOpen={isChatOpen}
         promptingDisabled={promptingDisabled}
+        draftPrompt={draftPrompt}
         repositoryUrl={REPOSITORY_URL}
         onRetry={handleRetry}
         onClearCanvas={handleClearCanvas}
         onToggleOpen={handleToggleChat}
+        onDraftPromptChange={setDraftPrompt}
       />
       {showTrialEndModal && (
         <TrialEndModal
