@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import ExportDiagramButton from "../src/components/export/ExportDiagramButton";
 
-test("ExportDiagramButton renders the primary export action", () => {
+test("ExportDiagramButton renders an icon-only export action with an accessible label", () => {
   const html = renderToStaticMarkup(
     React.createElement(ExportDiagramButton, {
       disabled: false,
@@ -14,8 +14,9 @@ test("ExportDiagramButton renders the primary export action", () => {
     })
   );
 
-  assert.match(html, /Export/);
   assert.match(html, /Download native Excalidraw file/);
+  assert.match(html, /export-diagram-icon/);
+  assert.doesNotMatch(html, />Export</);
   assert.doesNotMatch(html, /disabled=""/);
 });
 
@@ -32,7 +33,7 @@ test("ExportDiagramButton disables export when no diagram is available", () => {
   assert.match(html, /Create a diagram before exporting/);
 });
 
-test("ExportDiagramButton renders busy and result statuses", () => {
+test("ExportDiagramButton exposes busy and result statuses through the button label", () => {
   const exporting = renderToStaticMarkup(
     React.createElement(ExportDiagramButton, {
       disabled: false,
@@ -58,4 +59,7 @@ test("ExportDiagramButton renders busy and result statuses", () => {
   assert.match(exporting, /Preparing/);
   assert.match(success, /Downloaded/);
   assert.match(error, /Export failed/);
+  assert.doesNotMatch(exporting, /export-diagram-status/);
+  assert.doesNotMatch(success, /export-diagram-status/);
+  assert.doesNotMatch(error, /export-diagram-status/);
 });

@@ -160,35 +160,32 @@
 
 .export-diagram {
   position: absolute;
-  top: 18px;
-  right: 18px;
-  z-index: 25;
+  right: calc(1rem + 2.25rem + 0.5rem);
+  bottom: 1rem;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
 }
 
 .export-diagram-button {
-  min-height: 38px;
+  width: 2.25rem;
+  height: 2.25rem;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 14px;
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
+  background: #ececf4;
   color: #111827;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 0 0 1px #fff;
   font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
   cursor: pointer;
-  backdrop-filter: blur(10px);
 }
 
 .export-diagram-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: rgba(249, 115, 22, 0.5);
+  background: #f1f0ff;
 }
 
 .export-diagram-button:disabled {
@@ -197,26 +194,8 @@
 }
 
 .export-diagram-icon {
-  font-size: 16px;
-  line-height: 1;
-}
-
-.export-diagram-status {
-  padding: 6px 9px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  color: #334155;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.export-diagram-status-success {
-  color: #047857;
-}
-
-.export-diagram-status-error {
-  color: #b91c1c;
+  width: 1rem;
+  height: 1rem;
 }
 
 /* Standalone viewer mode for human scoring */
@@ -452,19 +431,30 @@
   background: rgba(67, 20, 7, 0.65);
 }
 
-.app.dark .export-diagram-button,
-.app.dark .export-diagram-status {
-  border-color: rgba(113, 113, 122, 0.7);
-  background: rgba(39, 39, 42, 0.92);
+.app.dark .export-diagram-button {
+  background: #363636;
+  box-shadow: 0 0 0 1px #121212;
   color: #f9fafb;
 }
 
-.app.dark .export-diagram-status-success {
-  color: #6ee7b7;
+.app.dark .export-diagram-button:hover:not(:disabled) {
+  background: #272727;
 }
 
-.app.dark .export-diagram-status-error {
-  color: #fca5a5;
+@media screen and (min-device-width: 1921px) {
+  .export-diagram {
+    right: calc(1rem + 2.5rem + 0.5rem);
+  }
+
+  .export-diagram-button {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .export-diagram-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
 }
 
 @media (max-width: 640px) {
@@ -505,12 +495,8 @@
   }
 
   .export-diagram {
-    top: 12px;
-    right: 12px;
-  }
-
-  .export-diagram-status {
-    display: none;
+    right: calc(1rem + 2.25rem + 0.5rem);
+    bottom: 1rem;
   }
 
   .trial-modal {
