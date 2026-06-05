@@ -10,6 +10,7 @@ import { useAgentChat } from "@cloudflare/ai-chat/react";
 import type { UIMessage } from "ai";
 import Canvas from "./components/Canvas";
 import ChatPanel from "./components/chat/ChatPanel";
+import ExportDiagramButton, { type ExportStatus } from "./components/export/ExportDiagramButton";
 import FailureToaster from "./components/notifications/FailureToaster";
 import { getRetryMessage } from "./components/chat/retry";
 import TrialEndModal from "./components/trial/TrialEndModal";
@@ -29,6 +30,11 @@ import {
   type AgentMode,
 } from "./planning/session";
 import type { PlanApprovalPayload } from "./planning/types";
+import {
+  buildExcalidrawExport,
+  downloadExcalidrawFile,
+  getExportableElementCount,
+} from "./export/excalidraw-file";
 import { serializeCanvasState } from "./context/canvas-state";
 import { findOverlaps } from "./context/overlaps";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
@@ -130,6 +136,7 @@ export default function App() {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "true";
   });
+  const [exportStatus, setExportStatus] = useState<ExportStatus>("idle");
   const [feedbackReadyMessageIds, setFeedbackReadyMessageIds] = useState<Set<string>>(new Set());
   const [failureNotices, setFailureNotices] = useState<AgentFailureNotice[]>([]);
   const pendingTurnIdRef = useRef<string | undefined>(undefined);
@@ -406,6 +413,27 @@ export default function App() {
     refreshCanvasRender(api);
   }, []);
 
+  const handleExportDiagram = useCallback(() => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+
+    try {
+      setExportStatus("exporting");
+      const file = buildExcalidrawExport({
+        elements: api.getSceneElements() as unknown[],
+        appState: api.getAppState() as Record<string, unknown>,
+        files: api.getFiles() as Record<string, unknown>,
+      });
+      downloadExcalidrawFile(file);
+      setExportStatus("success");
+      window.setTimeout(() => setExportStatus("idle"), 2200);
+    } catch (error) {
+      setExportStatus("error");
+      window.setTimeout(() => setExportStatus("idle"), 3200);
+      console.error("Failed to export Excalidraw diagram", error);
+    }
+  }, []);
+
   const retryMessage = getRetryMessage(messages);
   const isStreaming = status === "submitted" || status === "streaming";
 
@@ -560,11 +588,19 @@ export default function App() {
   const promptingDisabled = shouldBlockAgentPrompts(trialState);
   const showTrialEndModal = promptingDisabled && !trialModalDismissed && !isStreaming;
   const showOnboarding = messages.length === 0 && !onboardingDismissed;
+  const canExportDiagram =
+    excalidrawAPI !== null &&
+    getExportableElementCount(excalidrawAPI.getSceneElements() as unknown[]) > 0;
 
   return (
     <div className={`app ${theme}`}>
       <div className="canvas-container">
         <Canvas onApiReady={handleApiReady} onThemeChange={setTheme} />
+        <ExportDiagramButton
+          disabled={!canExportDiagram}
+          status={exportStatus}
+          onExport={handleExportDiagram}
+        />
         {showOnboarding && (
           <section className="canvas-onboarding">
             <div className="canvas-onboarding-grid">
