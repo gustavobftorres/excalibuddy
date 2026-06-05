@@ -1,9 +1,15 @@
 import { AIChatAgent } from "@cloudflare/ai-chat";
-import { convertToModelMessages, type StreamTextOnFinishCallback, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  type StreamTextOnErrorCallback,
+  type StreamTextOnFinishCallback,
+  type UIMessage,
+} from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamAgent, streamPlanningAgent } from "./agent-core";
 import { buildUIMessageStreamResponseOptions } from "./agent-stream-options";
 import { insertProjectLog, shouldLogTraces } from "./observability/braintrust";
+import { classifyAgentFailure } from "./agent-failures";
 import type { ChatMessageMetadata, TraceToolCall } from "./flywheel/types";
 
 interface Env extends Cloudflare.Env {
@@ -123,10 +129,49 @@ export class DesignAgent extends AIChatAgent<Env> {
       await onFinish?.(event);
     };
 
+    const logOnError: StreamTextOnErrorCallback = async ({ error }) => {
+      const end = Date.now();
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        shouldLogTraces({
+          apiKey: this.env.BRAINTRUST_API_KEY,
+          projectId: this.env.BRAINTRUST_PROJECT_ID,
+          enabled: this.env.TRACE_LOGGING_ENABLED,
+        })
+      ) {
+        await insertProjectLog({
+          apiKey: this.env.BRAINTRUST_API_KEY as string,
+          projectId: this.env.BRAINTRUST_PROJECT_ID as string,
+          event: {
+            id: turnId,
+            input: {
+              userInput: latestUser ? getText(latestUser) : "",
+              modelMessages: messages,
+            },
+            output: { error: message },
+            tags: ["production", "assistant-turn", "diagram-agent", "failure"],
+            metadata: {
+              sessionId,
+              model: modelId,
+              environment: "production",
+              kind: classifyAgentFailure(error),
+              source: "server",
+            },
+            metrics: {
+              start,
+              end,
+              latencyMs: end - start,
+            },
+          },
+        });
+      }
+    };
+
     const agentArgs = {
       model,
       messages,
       onFinish: logOnFinish,
+      onError: logOnError,
       env: {
         TAVILY_API_KEY: this.env.TAVILY_API_KEY,
         UPSTASH_VECTOR_REST_URL: this.env.UPSTASH_VECTOR_REST_URL,

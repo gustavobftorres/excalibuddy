@@ -1,6 +1,7 @@
 import { DesignAgent } from "./agent";
 import { routeAgentRequest } from "agents";
 import { insertProjectLog, logProjectFeedback, shouldLogTraces } from "./observability/braintrust";
+import type { AgentFailureLog } from "./agent-failures";
 import type { UserFeedback } from "./flywheel/types";
 
 export { DesignAgent };
@@ -147,6 +148,45 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
   return jsonResponse({ ok: true }, request, env);
 }
 
+async function handleFailureTrace(request: Request, env: Env): Promise<Response> {
+  const body = (await readJson(request)) as AgentFailureLog | null;
+
+  if (!body?.kind || !body?.source || !body?.message) {
+    return jsonResponse({ error: "kind, source, and message are required" }, request, env, {
+      status: 400,
+    });
+  }
+
+  if (
+    shouldLogTraces({
+      apiKey: env.BRAINTRUST_API_KEY,
+      projectId: env.BRAINTRUST_PROJECT_ID,
+      enabled: env.TRACE_LOGGING_ENABLED,
+    })
+  ) {
+    await insertProjectLog({
+      apiKey: env.BRAINTRUST_API_KEY as string,
+      projectId: env.BRAINTRUST_PROJECT_ID as string,
+      event: {
+        id: body.turnId ?? crypto.randomUUID(),
+        output: {
+          error: body.message,
+          toolName: body.toolName,
+        },
+        tags: ["production", "assistant-turn", "diagram-agent", "failure"],
+        metadata: {
+          sessionId: body.sessionId,
+          assistantMessageId: body.assistantMessageId,
+          kind: body.kind,
+          source: body.source,
+        },
+      },
+    });
+  }
+
+  return jsonResponse({ ok: true }, request, env);
+}
+
 export default {
   async fetch(request: Request, env: Env) {
     if (request.method === "OPTIONS") {
@@ -162,6 +202,9 @@ export default {
     }
     if (request.method === "POST" && url.pathname === "/api/feedback") {
       return handleFeedback(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/api/traces/failure") {
+      return handleFailureTrace(request, env);
     }
 
     const response =
