@@ -13,7 +13,12 @@ import ChatPanel from "./components/chat/ChatPanel";
 import { getRetryMessage } from "./components/chat/retry";
 import TrialEndModal from "./components/trial/TrialEndModal";
 import { getLatestPlanApprovalMessage } from "./planning/messages";
-import { buildApprovedPlanPrompt, shouldStartInPlanningMode } from "./planning/session";
+import {
+  buildAgentRequestBody,
+  buildApprovedPlanPrompt,
+  shouldStartInPlanningMode,
+  type AgentMode,
+} from "./planning/session";
 import type { PlanApprovalPayload } from "./planning/types";
 import { serializeCanvasState } from "./context/canvas-state";
 import { findOverlaps } from "./context/overlaps";
@@ -119,6 +124,7 @@ export default function App() {
   const [feedbackReadyMessageIds, setFeedbackReadyMessageIds] = useState<Set<string>>(new Set());
   const pendingTurnIdRef = useRef<string | undefined>(undefined);
   const pendingAssistantMessageIdRef = useRef<string | undefined>(undefined);
+  const pendingAgentModeRef = useRef<AgentMode | undefined>(undefined);
   const finalizedAssistantIdsRef = useRef<Set<string>>(new Set());
   const resolvedPlanToolCallIdsRef = useRef<Set<string>>(new Set());
   const traceApiBaseUrl = getTraceApiBaseUrl(agentHost);
@@ -162,12 +168,15 @@ export default function App() {
   const { messages, sendMessage, status } = useAgentChat({
     agent,
     generateId: () => pendingAssistantMessageIdRef.current ?? crypto.randomUUID(),
-    body: () => ({
-      sessionId,
-      turnId: pendingTurnIdRef.current,
-      assistantMessageId: pendingAssistantMessageIdRef.current,
-      mode: planningModeEnabled ? "planning" : agentMode,
-    }),
+    body: () =>
+      buildAgentRequestBody({
+        sessionId,
+        turnId: pendingTurnIdRef.current,
+        assistantMessageId: pendingAssistantMessageIdRef.current,
+        requestedMode: pendingAgentModeRef.current,
+        planningModeEnabled,
+        currentAgentMode: agentMode,
+      }),
     onToolCall: async ({ toolCall, addToolOutput }) => {
       const api = excalidrawAPIRef.current;
       if (
@@ -338,6 +347,7 @@ export default function App() {
       const assistantMessageId = `assistant-${turnId}`;
       pendingTurnIdRef.current = turnId;
       pendingAssistantMessageIdRef.current = assistantMessageId;
+      pendingAgentModeRef.current = nextMode;
       sendMessage({
         ...message,
         id: userMessageId,

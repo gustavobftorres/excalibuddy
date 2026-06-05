@@ -1,5 +1,27 @@
 import type { PlanApprovalPayload, PlanningGateInput } from "./types";
 
+export type AgentMode = "planning" | "build";
+
+export interface AgentRequestBodyInput {
+  sessionId: string;
+  turnId?: string;
+  assistantMessageId?: string;
+  requestedMode?: AgentMode;
+  planningModeEnabled: boolean;
+  currentAgentMode: AgentMode;
+}
+
+export function buildAgentRequestBody(input: AgentRequestBodyInput) {
+  return {
+    sessionId: input.sessionId,
+    turnId: input.turnId,
+    assistantMessageId: input.assistantMessageId,
+    mode:
+      input.requestedMode ??
+      (input.planningModeEnabled ? "planning" : input.currentAgentMode),
+  };
+}
+
 export function shouldStartInPlanningMode(input: PlanningGateInput) {
   return (
     input.planningModeEnabled &&

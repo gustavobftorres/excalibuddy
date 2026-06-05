@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildAgentRequestBody,
   buildApprovedPlanPrompt,
   shouldStartInPlanningMode,
 } from "../src/planning/session";
@@ -84,4 +85,23 @@ test("buildApprovedPlanPrompt embeds the user request and the approved steps", (
   assert.match(prompt, /Original request: Create an OAuth authorization code flow diagram/);
   assert.match(prompt, /Approved plan:/);
   assert.match(prompt, /1\. Place the browser and web app on the left\./);
+});
+
+test("buildAgentRequestBody uses the per-turn mode over stale React state", () => {
+  assert.deepEqual(
+    buildAgentRequestBody({
+      sessionId: "session-1",
+      turnId: "turn-1",
+      assistantMessageId: "assistant-1",
+      requestedMode: "planning",
+      planningModeEnabled: false,
+      currentAgentMode: "build",
+    }),
+    {
+      sessionId: "session-1",
+      turnId: "turn-1",
+      assistantMessageId: "assistant-1",
+      mode: "planning",
+    }
+  );
 });
