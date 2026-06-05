@@ -158,6 +158,46 @@
   transform: translateY(-1px);
 }
 
+.export-diagram {
+  position: absolute;
+  left: calc(1rem + 8.75rem + 5rem + 0.2rem);
+  bottom: 1rem;
+  z-index: 101;
+  display: flex;
+  align-items: center;
+}
+
+.export-diagram-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: #ececf4;
+  color: #111827;
+  box-shadow: 0 0 0 1px #fff;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.export-diagram-button:hover:not(:disabled) {
+  background: #f1f0ff;
+}
+
+.export-diagram-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.export-diagram-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
 /* Standalone viewer mode for human scoring */
 .viewer {
   display: flex;
@@ -391,6 +431,32 @@
   background: rgba(67, 20, 7, 0.65);
 }
 
+.app.dark .export-diagram-button {
+  background: #363636;
+  box-shadow: 0 0 0 1px #121212;
+  color: #f9fafb;
+}
+
+.app.dark .export-diagram-button:hover:not(:disabled) {
+  background: #272727;
+}
+
+@media screen and (min-device-width: 1921px) {
+  .export-diagram {
+    left: calc(1rem + 9.75rem + 5.5rem + 0.2rem);
+  }
+
+  .export-diagram-button {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .export-diagram-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
+
 @media (max-width: 640px) {
   .canvas-onboarding {
     inset: 12px;
@@ -426,6 +492,11 @@
 
   .canvas-onboarding-actions {
     flex-direction: column;
+  }
+
+  .export-diagram {
+    left: calc(1rem + 8.75rem + 5rem + 0.2rem);
+    bottom: 1rem;
   }
 
   .trial-modal {
