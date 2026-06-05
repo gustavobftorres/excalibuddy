@@ -160,9 +160,9 @@
 
 .export-diagram {
   position: absolute;
-  right: calc(1rem + 2.25rem + 0.5rem);
+  left: calc(1rem + 8.75rem + 0.75rem + 5rem + 0.5rem);
   bottom: 1rem;
-  z-index: 1;
+  z-index: 101;
   display: flex;
   align-items: center;
 }
@@ -443,7 +443,7 @@
 
 @media screen and (min-device-width: 1921px) {
   .export-diagram {
-    right: calc(1rem + 2.5rem + 0.5rem);
+    left: calc(1rem + 9.75rem + 0.75rem + 5.5rem + 0.5rem);
   }
 
   .export-diagram-button {
@@ -495,7 +495,7 @@
   }
 
   .export-diagram {
-    right: calc(1rem + 2.25rem + 0.5rem);
+    left: calc(1rem + 8.75rem + 0.75rem + 5rem + 0.5rem);
     bottom: 1rem;
   }
 
