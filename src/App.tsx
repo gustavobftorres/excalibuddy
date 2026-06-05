@@ -10,8 +10,17 @@ import { useAgentChat } from "@cloudflare/ai-chat/react";
 import type { UIMessage } from "ai";
 import Canvas from "./components/Canvas";
 import ChatPanel from "./components/chat/ChatPanel";
+import FailureToaster from "./components/notifications/FailureToaster";
 import { getRetryMessage } from "./components/chat/retry";
 import TrialEndModal from "./components/trial/TrialEndModal";
+import {
+  buildFailureNotice,
+  classifyAgentFailure,
+  getFailureMessage,
+  getLatestToolFailure,
+  logAgentFailure,
+  type AgentFailureNotice,
+} from "./agent-failures";
 import { getLatestPlanApprovalMessage } from "./planning/messages";
 import {
   buildAgentRequestBody,
@@ -122,11 +131,13 @@ export default function App() {
     return window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "true";
   });
   const [feedbackReadyMessageIds, setFeedbackReadyMessageIds] = useState<Set<string>>(new Set());
+  const [failureNotices, setFailureNotices] = useState<AgentFailureNotice[]>([]);
   const pendingTurnIdRef = useRef<string | undefined>(undefined);
   const pendingAssistantMessageIdRef = useRef<string | undefined>(undefined);
   const pendingAgentModeRef = useRef<AgentMode | undefined>(undefined);
   const finalizedAssistantIdsRef = useRef<Set<string>>(new Set());
   const resolvedPlanToolCallIdsRef = useRef<Set<string>>(new Set());
+  const loggedFailureIdsRef = useRef<Set<string>>(new Set());
   const traceApiBaseUrl = getTraceApiBaseUrl(agentHost);
 
   // Hold the latest excalidrawAPI in a ref so onToolCall (captured once at
@@ -161,6 +172,13 @@ export default function App() {
     name: sessionId,
     ...(agentHost ? { host: agentHost } : {}),
   });
+
+  const showFailureNotice = useCallback((notice: AgentFailureNotice) => {
+    setFailureNotices((current) => {
+      const withoutSameNotice = current.filter((item) => item.id !== notice.id);
+      return [...withoutSameNotice, notice].slice(-3);
+    });
+  }, []);
 
   // All four canvas tools are client side. The worker streams the call here,
   // we apply it to the live Excalidraw scene, and submit the result via
@@ -284,6 +302,21 @@ export default function App() {
         return;
       }
     },
+    onError: (error) => {
+      const kind = classifyAgentFailure(error, navigator.onLine);
+      const turnId = pendingTurnIdRef.current;
+      const assistantMessageId = pendingAssistantMessageIdRef.current;
+      const failureId = `client-${turnId ?? crypto.randomUUID()}`;
+      showFailureNotice(buildFailureNotice({ id: failureId, kind }));
+      void logAgentFailure(traceApiBaseUrl, {
+        turnId,
+        sessionId,
+        assistantMessageId,
+        kind,
+        source: "client",
+        message: getFailureMessage(error),
+      });
+    },
   });
 
   useEffect(() => {
@@ -345,6 +378,7 @@ export default function App() {
       const turnId = crypto.randomUUID();
       const userMessageId = `user-${turnId}`;
       const assistantMessageId = `assistant-${turnId}`;
+      setFailureNotices([]);
       pendingTurnIdRef.current = turnId;
       pendingAssistantMessageIdRef.current = assistantMessageId;
       pendingAgentModeRef.current = nextMode;
@@ -377,8 +411,29 @@ export default function App() {
 
   const handleRetry = useCallback(() => {
     if (!retryMessage) return;
+    setFailureNotices([]);
     sendMessageWithTrace(retryMessage);
   }, [retryMessage, sendMessageWithTrace]);
+
+  const handleDismissFailureNotice = useCallback((id: string) => {
+    setFailureNotices((current) => current.filter((notice) => notice.id !== id));
+  }, []);
+
+  useEffect(() => {
+    const failure = getLatestToolFailure(messages);
+    if (!failure) return;
+    const failureId = `tool-${failure.assistantMessageId ?? "unknown"}-${failure.toolName ?? "unknown"}`;
+    if (loggedFailureIdsRef.current.has(failureId)) return;
+    loggedFailureIdsRef.current.add(failureId);
+    showFailureNotice(
+      buildFailureNotice({
+        id: failureId,
+        kind: failure.kind,
+        toolName: failure.toolName,
+      })
+    );
+    void logAgentFailure(traceApiBaseUrl, failure);
+  }, [messages, showFailureNotice, traceApiBaseUrl]);
 
   const handleApprovePlan = useCallback(() => {
     if (!pendingPlanApproval || !lastCreatePrompt) return;
@@ -590,6 +645,12 @@ export default function App() {
         onClearCanvas={handleClearCanvas}
         onToggleOpen={handleToggleChat}
         onDraftPromptChange={setDraftPrompt}
+      />
+      <FailureToaster
+        notices={failureNotices}
+        canRetry={!isStreaming && !promptingDisabled && retryMessage !== null}
+        onRetry={handleRetry}
+        onDismiss={handleDismissFailureNotice}
       />
       {showTrialEndModal && (
         <TrialEndModal

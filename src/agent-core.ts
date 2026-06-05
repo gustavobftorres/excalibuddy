@@ -11,6 +11,7 @@ import {
   tool,
   type LanguageModel,
   type ModelMessage,
+  type StreamTextOnErrorCallback,
   type StreamTextOnFinishCallback,
 } from "ai";
 import { z } from "zod";
@@ -151,6 +152,7 @@ interface AgentArgs {
   system?: string;
   maxSteps?: number;
   onFinish?: StreamTextOnFinishCallback<any>;
+  onError?: StreamTextOnErrorCallback;
   env?: {
     TAVILY_API_KEY?: string;
     UPSTASH_VECTOR_REST_URL?: string;
@@ -165,6 +167,7 @@ export function streamAgent({
   system = SYSTEM_PROMPT,
   maxSteps = 8,
   onFinish,
+  onError,
   env = {},
 }: AgentArgs) {
   return streamText({
@@ -173,7 +176,9 @@ export function streamAgent({
     messages,
     tools: buildTools(env),
     stopWhen: stepCountIs(maxSteps),
+    timeout: { totalMs: 60000, chunkMs: 20000 },
     onFinish,
+    onError,
   });
 }
 
@@ -183,6 +188,7 @@ export function streamPlanningAgent({
   system = PLANNING_SYSTEM_PROMPT,
   maxSteps = 8,
   onFinish,
+  onError,
   env = {},
 }: AgentArgs) {
   return streamText({
@@ -191,7 +197,9 @@ export function streamPlanningAgent({
     messages,
     tools: buildPlanningTools(env),
     stopWhen: [hasToolCall("requestPlanApproval"), stepCountIs(maxSteps)],
+    timeout: { totalMs: 60000, chunkMs: 20000 },
     onFinish,
+    onError,
   });
 }
 
