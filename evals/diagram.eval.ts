@@ -22,6 +22,10 @@ import { labelKeywordScorer } from "./scorers/labelKeyword";
 import { labelRenderBoundsScorer } from "./scorers/labelRenderBounds";
 import { boundArrowsScorer } from "./scorers/boundArrows";
 import { arrowAnchorGeometryScorer } from "./scorers/arrowAnchorGeometry";
+import { boundLabelsScorer } from "./scorers/boundLabels";
+import { connectivityScorer } from "./scorers/connectivity";
+import { noOverlapsScorer } from "./scorers/noOverlaps";
+import { verifyCanvasUsageScorer } from "./scorers/verifyCanvasUsage";
 
 config({ path: ".dev.vars" });
 
@@ -82,6 +86,10 @@ Eval<GoldenTestCase, AgentOutput, GoldenTestCase>("Diagram Agent", {
     labelRenderBoundsScorer,
     boundArrowsScorer,
     arrowAnchorGeometryScorer,
+    boundLabelsScorer,
+    connectivityScorer,
+    noOverlapsScorer,
+    verifyCanvasUsageScorer,
   ],
   maxConcurrency: 1,
 });

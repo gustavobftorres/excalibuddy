@@ -36,6 +36,7 @@ import {
   getExportableElementCount,
 } from "./export/excalidraw-file";
 import { serializeCanvasState } from "./context/canvas-state";
+import { verifyCanvasElements } from "./context/verify-canvas";
 import { findOverlaps } from "./context/overlaps";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
 import { cascadeRemoveElements } from "./context/remove-elements";
@@ -210,7 +211,8 @@ export default function App() {
         (toolCall.toolName === "queryCanvas" ||
           toolCall.toolName === "addElements" ||
           toolCall.toolName === "updateElements" ||
-          toolCall.toolName === "removeElements")
+          toolCall.toolName === "removeElements" ||
+          toolCall.toolName === "verifyCanvas")
       ) {
         setPlanningModeNotice(
           "Planning mode is still on. Turn it off to let the agent modify the canvas."
@@ -233,6 +235,18 @@ export default function App() {
         addToolOutput({
           toolCallId: toolCall.toolCallId,
           output: { summary: serializeCanvasState(api.getSceneElements() as unknown[]) },
+        });
+        return;
+      }
+
+      if (toolCall.toolName === "verifyCanvas") {
+        const { userRequest } = toolCall.input as { userRequest: string };
+        addToolOutput({
+          toolCallId: toolCall.toolCallId,
+          output: verifyCanvasElements({
+            userRequest,
+            elements: api.getSceneElements() as unknown[],
+          }),
         });
         return;
       }

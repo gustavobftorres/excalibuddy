@@ -41,12 +41,7 @@
 import type { EvalScorer } from "braintrust";
 import type { AgentOutput } from "./schema";
 import type { GoldenTestCase } from "../buildMessages";
-
-// Words that strongly imply the user wants a connected graph. We look for
-// these in the prompt before deciding the scorer applies. If you find a
-// failure case where the scorer should fire but doesn't, add the keyword
-// here.
-const CONNECTED_HINTS = ["flow", "sequence", "between", "from", "to ", "pipeline", "chain", "process"];
+import { hasConnectivityIntent } from "../../src/context/verify-canvas";
 
 const SHAPE_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
 
@@ -54,8 +49,7 @@ export const connectivityScorer: EvalScorer<GoldenTestCase, AgentOutput, GoldenT
   output,
   input,
 }) => {
-  const prompt = (input?.input ?? "").toLowerCase();
-  if (!CONNECTED_HINTS.some((h) => prompt.includes(h))) return null;
+  if (!hasConnectivityIntent(input?.input ?? "")) return null;
 
   const elements = (output.elements ?? []) as Record<string, unknown>[];
   const shapes = elements.filter(

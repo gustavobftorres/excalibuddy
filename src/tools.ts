@@ -12,6 +12,7 @@ import { addElements } from "./tools/add-elements";
 import { removeElements } from "./tools/remove-elements";
 import { updateElements } from "./tools/update-elements";
 import { queryCanvas } from "./tools/query-canvas";
+import { verifyCanvas } from "./tools/verify-canvas";
 import { makeSearchWeb } from "./tools/search-web";
 import { makeSearchKnowledge } from "./tools/search-knowledge";
 import { requestPlanApproval } from "./tools/request-plan-approval";
@@ -28,6 +29,7 @@ export function buildTools(env: ToolEnv) {
     removeElements,
     updateElements,
     queryCanvas,
+    verifyCanvas,
     searchWeb: makeSearchWeb(env.TAVILY_API_KEY),
     searchKnowledge: makeSearchKnowledge({
       UPSTASH_VECTOR_REST_URL: env.UPSTASH_VECTOR_REST_URL,

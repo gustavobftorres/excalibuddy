@@ -19,6 +19,7 @@ import { buildPlanningTools, buildTools } from "./tools";
 import { serializeCanvasState } from "./context/canvas-state";
 import { applySkeleton } from "./context/applySkeleton";
 import { findOverlaps } from "./context/overlaps";
+import { verifyCanvasElements } from "./context/verify-canvas";
 import { normalizeTextRenderBounds } from "./context/text-rendering";
 import { normalizeArrowGeometry } from "./context/arrow-geometry";
 import { cascadeRemoveElements } from "./context/remove-elements";
@@ -30,6 +31,7 @@ You are a technical diagram design assistant that controls an Excalidraw canvas.
 # Tools
 
 - **queryCanvas()** read the current contents of the canvas. ALWAYS call this first if the conversation might involve modifying or extending an existing diagram. Returns a summary of every element with id, type, position, and label.
+- **verifyCanvas(userRequest)** verify the current canvas after creating or modifying a diagram. Pass the user's current request verbatim. Returns deterministic visual and structural issues plus suggestions: overlaps, clipped labels, unbound arrows, poor arrow anchors, and disconnected shapes when the request implies a connected diagram.
 - **addElements(elements)** add new elements to the canvas. Use for creating diagrams or appending to existing ones.
 - **updateElements(updates)** change properties of existing elements by id. Use for recoloring, repositioning, relabeling, resizing.
 - **removeElements(ids)** delete elements by id.
@@ -85,6 +87,7 @@ Recognize the pattern, then follow its layout.
 
 - **Act on overlap feedback.** Every \`addElements\` result includes an \`overlaps\` array listing pairs of element ids whose bounding boxes collide on the canvas. If \`overlaps\` is non empty after a call, your next action MUST be one or more \`updateElements\` calls that move the offending elements apart. Do not leave overlaps in the final layout.
 - **Act on canvas hygiene warnings.** If \`queryCanvas\` reports unbound arrows, angled arrows between aligned shapes, clipped labels, or unreadable text, your next action MUST be \`updateElements\`, \`addElements\`, or \`removeElements\` to fix those exact ids. Straight arrows between vertically or horizontally aligned shapes should run from the middle of the source shape edge to the middle of the target shape edge; for diamonds this is the relevant corner.
+- **Verify connected diagrams before final response.** After creating or modifying any flow, sequence, architecture, state machine, ER diagram, network topology, org chart, or any diagram with relationships between shapes, call \`verifyCanvas({ userRequest: "..." })\` before your final answer. If it returns issues, fix them with \`updateElements\`, \`addElements\`, or \`removeElements\`, then call \`verifyCanvas\` again.
 - **Query before you modify.** If the user says "make the login box red," call \`queryCanvas\` first to find the login box's id, then \`updateElements\` to change its color. Never invent ids.
 - **Prefer updateElements for tweaks.** Don't redraw the whole diagram when one element changes.
 - **Preserve what exists.** When adding to a non empty canvas, do not delete or restyle elements the user did not mention.
@@ -286,6 +289,12 @@ export async function runAgent({
       description: baseTools.queryCanvas.description,
       inputSchema: z.object({}),
       execute: async () => ({ summary: serializeCanvasState(sim) }),
+    }),
+    verifyCanvas: tool({
+      description: baseTools.verifyCanvas.description,
+      inputSchema: baseTools.verifyCanvas.inputSchema as never,
+      execute: async ({ userRequest }: { userRequest: string }) =>
+        verifyCanvasElements({ userRequest, elements: sim }),
     }),
     searchWeb: baseTools.searchWeb,
     searchKnowledge: baseTools.searchKnowledge,

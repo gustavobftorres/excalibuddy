@@ -11,6 +11,7 @@ test("planning tools expose plan approval but no canvas mutation tools", () => {
   assert.equal("updateElements" in planningTools, false);
   assert.equal("removeElements" in planningTools, false);
   assert.equal("queryCanvas" in planningTools, false);
+  assert.equal("verifyCanvas" in planningTools, false);
 });
 
 test("build tools still expose the canvas mutators", () => {
@@ -20,4 +21,5 @@ test("build tools still expose the canvas mutators", () => {
   assert.ok("updateElements" in buildModeTools);
   assert.ok("removeElements" in buildModeTools);
   assert.ok("queryCanvas" in buildModeTools);
+  assert.ok("verifyCanvas" in buildModeTools);
 });
