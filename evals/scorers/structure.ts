@@ -3,7 +3,9 @@
 // (e.g. "3 rectangle elements", "2 arrow elements") and scores by how close the
 // actual element counts are.
 //
-// Code based, no LLM involved. Returns a 0-1 fractional score.
+// Code based, no LLM involved. Returns a 0-1 fractional score. Returns null
+// when the test case has no countable element expectations, so Braintrust
+// skips rows this scorer cannot honestly evaluate.
 
 import type { EvalScorer } from "braintrust";
 import type { AgentOutput } from "./schema";
@@ -54,18 +56,14 @@ export const structureScorer: EvalScorer<GoldenTestCase, AgentOutput, GoldenTest
   }
 
   if (!expected) {
-    return { name: "Structure", score: 0.5, metadata: { reason: "no expected provided" } };
+    return null;
   }
 
   const expectedCounts = parseExpectedCounts(expected.expectedCharacteristics);
   const actualCounts = countByType(output.elements);
 
   if (Object.keys(expectedCounts).length === 0) {
-    return {
-      name: "Structure",
-      score: 0.5,
-      metadata: { reason: "no countable expectations", actualCounts },
-    };
+    return null;
   }
 
   let totalScore = 0;
