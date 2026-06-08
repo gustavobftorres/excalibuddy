@@ -8,6 +8,7 @@ interface TextLike {
   text?: unknown;
   fontSize?: unknown;
   textAlign?: unknown;
+  verticalAlign?: unknown;
   containerId?: unknown;
   customData?: unknown;
 }
@@ -111,6 +112,7 @@ function normalizeWidth(
 function normalizeTextElement(
   el: TextLike,
   requiredWidth: number,
+  forceContainerCentering: boolean,
   updateElement: UpdateElement
 ): unknown {
   const text = getText(el);
@@ -124,13 +126,23 @@ function normalizeTextElement(
   }
 
   const customData = getCustomData(el);
-  if (customData.textRenderBoundsNormalized === true) {
+  const centeringUpdates =
+    forceContainerCentering &&
+    (el.textAlign !== "center" || el.verticalAlign !== "middle")
+      ? { textAlign: "center", verticalAlign: "middle" }
+      : {};
+
+  if (
+    customData.textRenderBoundsNormalized === true &&
+    Object.keys(centeringUpdates).length === 0
+  ) {
     return el;
   }
 
   const normalized = normalizeWidth(el, requiredWidth, updateElement) as TextLike;
 
   return updateElement(normalized, {
+    ...centeringUpdates,
     customData: {
       ...customData,
       textRenderBoundsNormalized: true,
@@ -147,6 +159,12 @@ export function normalizeTextRenderBounds<T extends readonly unknown[]>(
   })
 ): T {
   const containerWidthById = new Map<string, number>();
+  const shapeContainerIds = new Set<string>();
+
+  for (const element of elements) {
+    const shape = element as ShapeLike;
+    if (isContainerShape(shape)) shapeContainerIds.add(shape.id as string);
+  }
 
   for (const element of elements) {
     const el = element as TextLike;
@@ -166,6 +184,7 @@ export function normalizeTextRenderBounds<T extends readonly unknown[]>(
       return normalizeTextElement(
         el,
         requiredTextRenderBoundsWidth(text, getFontSize(el)),
+        typeof el.containerId === "string" && shapeContainerIds.has(el.containerId),
         updateElement
       );
     }

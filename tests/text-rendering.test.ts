@@ -121,6 +121,40 @@ test("normalizeTextRenderBounds handles bound labels and standalone text", () =>
   assert.ok((normalized[2]?.width as number) > 30);
 });
 
+test("normalizeTextRenderBounds explicitly centers labels bound to shapes", () => {
+  const normalized = normalizeTextRenderBounds([
+    { id: "rect", type: "rectangle", x: 100, y: 100, width: 220, height: 100 },
+    {
+      id: "rect_label",
+      type: "text",
+      x: 100,
+      y: 100,
+      width: 220,
+      height: 100,
+      text: "Precipitation\n(rain / snow)",
+      containerId: "rect",
+    },
+    { id: "arrow", type: "arrow", x: 320, y: 150, width: 80, height: 0 },
+    {
+      id: "arrow_label",
+      type: "text",
+      x: 320,
+      y: 150,
+      width: 80,
+      height: 30,
+      text: "water goes up",
+      containerId: "arrow",
+    },
+  ]) as Record<string, unknown>[];
+
+  const shapeLabel = normalized.find((element) => element.id === "rect_label")!;
+  const arrowLabel = normalized.find((element) => element.id === "arrow_label")!;
+
+  assert.equal(shapeLabel.textAlign, "center");
+  assert.equal(shapeLabel.verticalAlign, "middle");
+  assert.equal(arrowLabel.verticalAlign, undefined);
+});
+
 test("findLabelRenderRisks reports labels whose longest word cannot fit", () => {
   const risks = findLabelRenderRisks([
     {
