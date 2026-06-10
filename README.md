@@ -77,6 +77,8 @@ TAVILY_API_KEY=tvly-...
 
 The Worker reads from this file via `wrangler dev` automatically. Node scripts (`npm run embed`, `npm run eval`) read it via `dotenv-cli`.
 
+Before publishing release or demo-facing changes, use the [release checklist](./docs/release-checklist.md) to confirm tests, builds, eval thresholds, demo-critical evals, manual canvas smoke tests, and promoted flywheel regressions.
+
 ### 4. Deploy
 
 The frontend can be deployed to Vercel, but the agent runtime must run on
