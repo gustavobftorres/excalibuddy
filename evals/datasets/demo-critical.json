@@ -1,0 +1,34 @@
+[
+  {
+    "id": "create-simple-03",
+    "rationale": "Core flowchart hello-world: boxes, labels, and sequential arrows."
+  },
+  {
+    "id": "create-simple-04b",
+    "rationale": "Small branching decision flow with a diamond and Yes/No arrow labels."
+  },
+  {
+    "id": "create-medium-01",
+    "rationale": "Classic product-demo login flow with happy and error branches."
+  },
+  {
+    "id": "create-medium-02",
+    "rationale": "Simple ERD proves the demo is not limited to flowcharts."
+  },
+  {
+    "id": "create-medium-03",
+    "rationale": "Common technical architecture diagram for demo audiences."
+  },
+  {
+    "id": "create-medium-04",
+    "rationale": "Sequence diagram coverage for ordered interactions and participants."
+  },
+  {
+    "id": "create-long-labels",
+    "rationale": "Protects first-impression visual quality for realistic service names."
+  },
+  {
+    "id": "create-vertical-process-straight-arrows",
+    "rationale": "Covers vertical process layout with multiple aligned steps and arrows."
+  }
+]
