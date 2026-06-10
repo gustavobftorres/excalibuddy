@@ -7,14 +7,13 @@
 // Run with:
 //   npm run eval
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { config } from "dotenv";
 import { Eval } from "braintrust";
 import { createOpenAI } from "@ai-sdk/openai";
 
 import { runAgent } from "../src/agent-core";
 import { buildMessages, type GoldenTestCase } from "./buildMessages";
+import { loadEvalDataset } from "./loadDataset";
 import { schemaScorer, type AgentOutput } from "./scorers/schema";
 import { structureScorer } from "./scorers/structure";
 import { toolChoiceScorer } from "./scorers/toolChoice";
@@ -31,34 +30,20 @@ config({ path: ".dev.vars" });
 
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-type FlywheelRegressionCase = GoldenTestCase & {
-  sourceTraceId: string;
-  feedback: "thumbs_down" | "thumbs_up";
-  reviewNotes: string;
-};
-
-const goldenCases: GoldenTestCase[] = JSON.parse(
-  readFileSync(join("evals", "datasets", "golden_2.json"), "utf-8")
-);
-const regressionCases: FlywheelRegressionCase[] = JSON.parse(
-  readFileSync(join("evals", "datasets", "regression.json"), "utf-8")
-);
-
-const testCases = [
-  ...goldenCases.map((testCase) => ({ ...testCase, source: "golden" as const })),
-  ...regressionCases.map((testCase) => ({ ...testCase, source: "flywheel" as const })),
-];
+const dataset = loadEvalDataset();
 
 Eval<GoldenTestCase, AgentOutput, GoldenTestCase>("Diagram Agent", {
   data: () =>
-    testCases.map((tc) => ({
+    dataset.testCases.map((tc) => ({
       input: tc,
       expected: tc,
       metadata: {
         id: tc.id,
+        suite: dataset.suite,
         difficulty: tc.difficulty,
         category: tc.category,
         source: tc.source,
+        rationale: tc.rationale,
         sourceTraceId: "sourceTraceId" in tc ? tc.sourceTraceId : undefined,
         feedback: "feedback" in tc ? tc.feedback : undefined,
       },
