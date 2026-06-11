@@ -155,6 +155,63 @@ test("normalizeTextRenderBounds explicitly centers labels bound to shapes", () =
   assert.equal(arrowLabel.verticalAlign, undefined);
 });
 
+test("normalizeTextRenderBounds positions ellipse labels using Excalidraw bound text geometry", () => {
+  const normalized = normalizeTextRenderBounds([
+    { id: "ellipse_runoff", type: "ellipse", x: 100, y: 100, width: 160, height: 160 },
+    {
+      id: "ellipse_runoff_label",
+      type: "text",
+      x: 100,
+      y: 100,
+      width: 160,
+      height: 30,
+      text: "Runoff",
+      fontSize: 20,
+      containerId: "ellipse_runoff",
+    },
+  ]) as Record<string, unknown>[];
+
+  const label = normalized.find((element) => element.id === "ellipse_runoff_label")!;
+  const expectedWidth = estimateTextRenderWidth("Runoff", 20) + 16;
+  const inset = 5 + (160 / 2) * (1 - Math.sqrt(2) / 2);
+  const maxWidth = Math.round((160 / 2) * Math.sqrt(2)) - 10;
+  const maxHeight = Math.round((160 / 2) * Math.sqrt(2)) - 10;
+
+  assert.equal(label.textAlign, "center");
+  assert.equal(label.verticalAlign, "middle");
+  assert.equal(label.width, expectedWidth);
+  assert.equal(label.x, 100 + inset + (maxWidth / 2 - expectedWidth / 2));
+  assert.equal(label.y, 100 + inset + (maxHeight / 2 - 30 / 2));
+});
+
+test("normalizeTextRenderBounds positions diamond labels using Excalidraw bound text geometry", () => {
+  const normalized = normalizeTextRenderBounds([
+    { id: "diamond_decision", type: "diamond", x: 100, y: 100, width: 160, height: 120 },
+    {
+      id: "diamond_decision_label",
+      type: "text",
+      x: 100,
+      y: 100,
+      width: 160,
+      height: 30,
+      text: "Cooked?",
+      fontSize: 20,
+      containerId: "diamond_decision",
+    },
+  ]) as Record<string, unknown>[];
+
+  const diamond = normalized.find((element) => element.id === "diamond_decision")!;
+  const label = normalized.find((element) => element.id === "diamond_decision_label")!;
+  const expectedWidth = estimateTextRenderWidth("Cooked?", 20) + 16;
+  const diamondX = diamond.x as number;
+  const diamondY = diamond.y as number;
+  const diamondWidth = diamond.width as number;
+  const diamondHeight = diamond.height as number;
+
+  assert.equal(label.x, diamondX + 5 + diamondWidth / 4 + ((Math.round(diamondWidth / 2) - 10) / 2 - expectedWidth / 2));
+  assert.equal(label.y, diamondY + 5 + diamondHeight / 4 + ((Math.round(diamondHeight / 2) - 10) / 2 - 30 / 2));
+});
+
 test("findLabelRenderRisks reports labels whose longest word cannot fit", () => {
   const risks = findLabelRenderRisks([
     {

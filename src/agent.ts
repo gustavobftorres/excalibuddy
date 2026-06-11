@@ -9,7 +9,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamAgent, streamPlanningAgent } from "./agent-core";
 import { buildUIMessageStreamResponseOptions } from "./agent-stream-options";
 import { insertProjectLog, shouldLogTraces } from "./observability/braintrust";
-import { classifyAgentFailure } from "./agent-failures";
+import { classifyAgentFailure, serializeAgentError } from "./agent-failures";
 import type { ChatMessageMetadata, TraceToolCall } from "./flywheel/types";
 
 interface Env extends Cloudflare.Env {
@@ -132,6 +132,20 @@ export class DesignAgent extends AIChatAgent<Env> {
     const logOnError: StreamTextOnErrorCallback = async ({ error }) => {
       const end = Date.now();
       const message = error instanceof Error ? error.message : String(error);
+      const kind = classifyAgentFailure(error);
+      console.error(
+        "agent_stream_failed",
+        JSON.stringify({
+          turnId,
+          sessionId,
+          assistantMessageId,
+          model: modelId,
+          mode,
+          kind,
+          latencyMs: end - start,
+          error: serializeAgentError(error),
+        })
+      );
       if (
         shouldLogTraces({
           apiKey: this.env.BRAINTRUST_API_KEY,
@@ -154,7 +168,7 @@ export class DesignAgent extends AIChatAgent<Env> {
               sessionId,
               model: modelId,
               environment: "production",
-              kind: classifyAgentFailure(error),
+              kind,
               source: "server",
             },
             metrics: {

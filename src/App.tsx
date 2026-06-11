@@ -41,7 +41,11 @@ import { findOverlaps } from "./context/overlaps";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
 import { cascadeRemoveElements } from "./context/remove-elements";
 import { normalizeTextRenderBounds } from "./context/text-rendering";
-import { normalizeArrowGeometry } from "./context/arrow-geometry";
+import {
+  normalizeArrowGeometry,
+  normalizeArrowLabelClearance,
+  normalizeArrowLabelPlacement,
+} from "./context/arrow-geometry";
 import {
   getTrialStateFromStorage,
   recordTrialPrompt,
@@ -97,8 +101,14 @@ function stripNulls(value: unknown): unknown {
 function normalizeCanvasElements<T extends readonly unknown[]>(elements: T): T {
   const updateElement = (element: unknown, updates: Record<string, unknown>) =>
     newElementWith(element as never, updates as never);
-  return normalizeArrowGeometry(
-    normalizeTextRenderBounds(elements, updateElement),
+  return normalizeArrowLabelPlacement(
+    normalizeArrowGeometry(
+      normalizeArrowLabelClearance(
+        normalizeTextRenderBounds(elements, updateElement),
+        updateElement
+      ),
+      updateElement
+    ),
     updateElement
   );
 }

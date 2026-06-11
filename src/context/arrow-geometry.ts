@@ -8,6 +8,8 @@ interface ElementLike {
   points?: unknown;
   startBinding?: ArrowBinding | null;
   endBinding?: ArrowBinding | null;
+  containerId?: unknown;
+  text?: unknown;
   customData?: unknown;
 }
 
@@ -53,6 +55,17 @@ export interface ArrowAnchorRisk {
   actualEnd: Point;
 }
 
+export interface ArrowLabelClearanceRisk {
+  arrowId: string;
+  labelId: string;
+  startId: string;
+  endId: string;
+  axis: "horizontal" | "vertical";
+  gap: number;
+  requiredGap: number;
+  missingGap: number;
+}
+
 type UpdateElement = (element: unknown, updates: Record<string, unknown>) => unknown;
 
 const SHAPE_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
@@ -61,6 +74,7 @@ const ANCHOR_TOLERANCE = 10;
 const BINDING_TOLERANCE = 0.001;
 const EDGE_CENTER_BINDING_GAP = 1;
 const ROUTE_CLEARANCE = 36;
+const ARROW_LABEL_CLEARANCE_PADDING = 16;
 
 function isShape(el: ElementLike): el is ShapeBox {
   return (
@@ -87,6 +101,36 @@ function shapeById(elements: unknown[]): Map<string, ShapeBox> {
   return out;
 }
 
+function arrowLabelByContainerId(elements: unknown[]): Map<string, ElementLike> {
+  const out = new Map<string, ElementLike>();
+  const arrowIds = new Set<string>();
+
+  for (const element of elements) {
+    const el = element as ElementLike;
+    if ((el.type === "arrow" || el.type === "line") && typeof el.id === "string") {
+      arrowIds.add(el.id);
+    }
+  }
+
+  for (const element of elements) {
+    const el = element as ElementLike;
+    if (
+      el.type === "text" &&
+      typeof el.id === "string" &&
+      typeof el.containerId === "string" &&
+      arrowIds.has(el.containerId) &&
+      typeof el.x === "number" &&
+      typeof el.y === "number" &&
+      typeof el.width === "number" &&
+      typeof el.height === "number"
+    ) {
+      out.set(el.containerId, el);
+    }
+  }
+
+  return out;
+}
+
 function getBindingIds(arrow: ElementLike): { startId?: string; endId?: string } {
   const startId = arrow.startBinding?.elementId;
   const endId = arrow.endBinding?.elementId;
@@ -102,6 +146,27 @@ function getAxis(start: ShapeBox, end: ShapeBox): "horizontal" | "vertical" | nu
   if (Math.abs(a.x - b.x) <= AXIS_ALIGNMENT_TOLERANCE) return "vertical";
   if (Math.abs(a.y - b.y) <= AXIS_ALIGNMENT_TOLERANCE) return "horizontal";
   return null;
+}
+
+function gapBetweenShapes(
+  start: ShapeBox,
+  end: ShapeBox,
+  axis: "horizontal" | "vertical"
+): number {
+  if (axis === "horizontal") {
+    return center(end).x >= center(start).x
+      ? end.x - (start.x + start.width)
+      : start.x - (end.x + end.width);
+  }
+
+  return center(end).y >= center(start).y
+    ? end.y - (start.y + start.height)
+    : start.y - (end.y + end.height);
+}
+
+function labelRequiredGap(label: ElementLike, axis: "horizontal" | "vertical"): number | null {
+  const size = axis === "horizontal" ? label.width : label.height;
+  return typeof size === "number" ? size + ARROW_LABEL_CLEARANCE_PADDING : null;
 }
 
 function connectionPoint(shape: ShapeBox, axis: "horizontal" | "vertical", toward: ShapeBox): Point {
@@ -470,6 +535,147 @@ export function findArrowAnchorRisks(elements: unknown[]): ArrowAnchorRisk[] {
   return risks;
 }
 
+export function findArrowLabelClearanceRisks(elements: unknown[]): ArrowLabelClearanceRisk[] {
+  const shapes = shapeById(elements);
+  const labelsByArrowId = arrowLabelByContainerId(elements);
+  const risks: ArrowLabelClearanceRisk[] = [];
+
+  for (const element of elements) {
+    const arrow = element as ElementLike;
+    if ((arrow.type !== "arrow" && arrow.type !== "line") || typeof arrow.id !== "string") {
+      continue;
+    }
+
+    const label = labelsByArrowId.get(arrow.id);
+    if (!label || typeof label.id !== "string") continue;
+
+    const { startId, endId } = getBindingIds(arrow);
+    if (!startId || !endId) continue;
+
+    const startShape = shapes.get(startId);
+    const endShape = shapes.get(endId);
+    if (!startShape || !endShape) continue;
+
+    const axis = getAxis(startShape, endShape);
+    if (!axis) continue;
+
+    const requiredGap = labelRequiredGap(label, axis);
+    if (requiredGap === null) continue;
+
+    const gap = gapBetweenShapes(startShape, endShape, axis);
+    const missingGap = requiredGap - gap;
+    if (missingGap <= 0.5) continue;
+
+    risks.push({
+      arrowId: arrow.id,
+      labelId: label.id,
+      startId,
+      endId,
+      axis,
+      gap,
+      requiredGap,
+      missingGap,
+    });
+  }
+
+  return risks.sort((a, b) => a.arrowId.localeCompare(b.arrowId));
+}
+
+function shiftElement(
+  element: unknown,
+  dx: number,
+  dy: number,
+  updateElement: UpdateElement
+): unknown {
+  const el = element as ElementLike;
+  const updates: Record<string, unknown> = {};
+  if (typeof el.x === "number") updates.x = el.x + dx;
+  if (typeof el.y === "number") updates.y = el.y + dy;
+  return Object.keys(updates).length > 0 ? updateElement(element, updates) : element;
+}
+
+function movedShapeIdsForRisk(elements: readonly unknown[], risk: ArrowLabelClearanceRisk): Set<string> {
+  const shapes = shapeById(elements as unknown[]);
+  const startShape = shapes.get(risk.startId);
+  const endShape = shapes.get(risk.endId);
+  if (!startShape || !endShape) return new Set();
+
+  const startCenter = center(startShape);
+  const endCenter = center(endShape);
+  const movedIds = new Set<string>();
+
+  for (const shape of shapes.values()) {
+    const shapeCenter = center(shape);
+    if (risk.axis === "horizontal") {
+      if (
+        (endCenter.x >= startCenter.x && shapeCenter.x >= endCenter.x) ||
+        (endCenter.x < startCenter.x && shapeCenter.x <= endCenter.x)
+      ) {
+        movedIds.add(shape.id);
+      }
+      continue;
+    }
+
+    if (
+      (endCenter.y >= startCenter.y && shapeCenter.y >= endCenter.y) ||
+      (endCenter.y < startCenter.y && shapeCenter.y <= endCenter.y)
+    ) {
+      movedIds.add(shape.id);
+    }
+  }
+
+  return movedIds;
+}
+
+function shouldMoveWithShapes(element: ElementLike, movedShapeIds: Set<string>): boolean {
+  if (typeof element.id === "string" && movedShapeIds.has(element.id)) return true;
+  return element.type === "text" && typeof element.containerId === "string" && movedShapeIds.has(element.containerId);
+}
+
+function normalizeOneArrowLabelClearancePass<T extends readonly unknown[]>(
+  elements: T,
+  updateElement: UpdateElement
+): T {
+  const risks = findArrowLabelClearanceRisks(elements as unknown[]);
+  if (risks.length === 0) return elements;
+
+  const risk = risks[0]!;
+  const shapes = shapeById(elements as unknown[]);
+  const startShape = shapes.get(risk.startId);
+  const endShape = shapes.get(risk.endId);
+  if (!startShape || !endShape) return elements;
+
+  const delta = risk.missingGap;
+  const startCenter = center(startShape);
+  const endCenter = center(endShape);
+  const dx =
+    risk.axis === "horizontal" ? (endCenter.x >= startCenter.x ? delta : -delta) : 0;
+  const dy = risk.axis === "vertical" ? (endCenter.y >= startCenter.y ? delta : -delta) : 0;
+  const movedShapeIds = movedShapeIdsForRisk(elements, risk);
+
+  return elements.map((element) =>
+    shouldMoveWithShapes(element as ElementLike, movedShapeIds)
+      ? shiftElement(element, dx, dy, updateElement)
+      : element
+  ) as unknown as T;
+}
+
+export function normalizeArrowLabelClearance<T extends readonly unknown[]>(
+  elements: T,
+  updateElement: UpdateElement = (element, updates) => ({
+    ...(element as Record<string, unknown>),
+    ...updates,
+  })
+): T {
+  let current = elements;
+  for (let i = 0; i < 20; i++) {
+    const next = normalizeOneArrowLabelClearancePass(current, updateElement);
+    if (next === current) return current;
+    current = next;
+  }
+  return current;
+}
+
 export function normalizeArrowGeometry<T extends readonly unknown[]>(
   elements: T,
   updateElement: UpdateElement = (element, updates) => ({
@@ -492,7 +698,6 @@ export function normalizeArrowGeometry<T extends readonly unknown[]>(
     if (!startShape || !endShape) return element;
     const axis = getAxis(startShape, endShape);
     const hasDiamond = startShape.type === "diamond" || endShape.type === "diamond";
-    if (!axis && !hasDiamond) return element;
 
     const anchors = typeof arrow.id === "string" ? diamondAnchors.get(arrow.id) : undefined;
     const start =
@@ -526,5 +731,103 @@ export function normalizeArrowGeometry<T extends readonly unknown[]>(
         arrowGeometryNormalized: true,
       },
     });
+  }) as unknown as T;
+}
+
+function absoluteRoutePoints(arrow: ElementLike): Point[] | null {
+  if (typeof arrow.x !== "number" || typeof arrow.y !== "number") return null;
+
+  if (Array.isArray(arrow.points) && arrow.points.length >= 2) {
+    const points: Point[] = [];
+    for (const raw of arrow.points) {
+      const point = raw as unknown[];
+      if (
+        !Array.isArray(point) ||
+        typeof point[0] !== "number" ||
+        typeof point[1] !== "number"
+      ) {
+        return null;
+      }
+      points.push({ x: arrow.x + point[0], y: arrow.y + point[1] });
+    }
+    return points;
+  }
+
+  if (typeof arrow.width !== "number" || typeof arrow.height !== "number") return null;
+  return [
+    { x: arrow.x, y: arrow.y },
+    { x: arrow.x + arrow.width, y: arrow.y + arrow.height },
+  ];
+}
+
+function routeMidpoint(points: Point[]): Point {
+  const segments: { start: Point; end: Point; length: number }[] = [];
+  let total = 0;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const start = points[i]!;
+    const end = points[i + 1]!;
+    const length = distance(start, end);
+    segments.push({ start, end, length });
+    total += length;
+  }
+
+  if (total === 0) return points[0]!;
+
+  let remaining = total / 2;
+  for (const segment of segments) {
+    if (remaining > segment.length) {
+      remaining -= segment.length;
+      continue;
+    }
+    const t = segment.length === 0 ? 0 : remaining / segment.length;
+    return {
+      x: segment.start.x + (segment.end.x - segment.start.x) * t,
+      y: segment.start.y + (segment.end.y - segment.start.y) * t,
+    };
+  }
+
+  return points.at(-1)!;
+}
+
+export function normalizeArrowLabelPlacement<T extends readonly unknown[]>(
+  elements: T,
+  updateElement: UpdateElement = (element, updates) => ({
+    ...(element as Record<string, unknown>),
+    ...updates,
+  })
+): T {
+  const arrowById = new Map<string, ElementLike>();
+  for (const element of elements) {
+    const el = element as ElementLike;
+    if ((el.type === "arrow" || el.type === "line") && typeof el.id === "string") {
+      arrowById.set(el.id, el);
+    }
+  }
+
+  return elements.map((element) => {
+    const label = element as ElementLike;
+    if (
+      label.type !== "text" ||
+      typeof label.containerId !== "string" ||
+      typeof label.x !== "number" ||
+      typeof label.y !== "number" ||
+      typeof label.width !== "number" ||
+      typeof label.height !== "number"
+    ) {
+      return element;
+    }
+
+    const arrow = arrowById.get(label.containerId);
+    if (!arrow) return element;
+
+    const points = absoluteRoutePoints(arrow);
+    if (!points) return element;
+
+    const midpoint = routeMidpoint(points);
+    const x = midpoint.x - label.width / 2;
+    const y = midpoint.y - label.height / 2;
+    if (Math.abs(label.x - x) <= 0.5 && Math.abs(label.y - y) <= 0.5) return element;
+    return updateElement(element, { x, y });
   }) as unknown as T;
 }

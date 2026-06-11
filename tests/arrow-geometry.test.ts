@@ -1,10 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  findArrowLabelClearanceRisks,
   findArrowAnchorRisks,
   findUnboundArrows,
+  normalizeArrowLabelClearance,
+  normalizeArrowLabelPlacement,
   normalizeArrowGeometry,
 } from "../src/context/arrow-geometry";
+import { findOverlaps } from "../src/context/overlaps";
+import { estimateTextRenderWidth, normalizeTextRenderBounds } from "../src/context/text-rendering";
 
 const verticalFlow = [
   {
@@ -358,4 +363,187 @@ test("normalizeArrowGeometry curves diamond return arrows away from the forward 
     [-100, 0],
   ]);
   assert.deepEqual(back.roundness, { type: 2 });
+});
+
+test("normalizeArrowGeometry anchors diagonal arrows between non aligned shapes", () => {
+  const normalized = normalizeArrowGeometry([
+    { id: "ellipse_ocean", type: "ellipse", x: 100, y: 260, width: 180, height: 120 },
+    { id: "ellipse_evaporation", type: "ellipse", x: 520, y: 80, width: 200, height: 120 },
+    {
+      id: "arrow_ocean_evaporation",
+      type: "arrow",
+      x: 260,
+      y: 210,
+      width: 40,
+      height: 0,
+      points: [
+        [0, 0],
+        [40, 0],
+      ],
+      startBinding: { elementId: "ellipse_ocean" },
+      endBinding: { elementId: "ellipse_evaporation" },
+    },
+  ]) as Record<string, unknown>[];
+
+  const arrow = normalized.find((element) => element.id === "arrow_ocean_evaporation")!;
+
+  assert.equal(arrow.x, 280);
+  assert.equal(arrow.y, 320);
+  assert.equal(arrow.width, 240);
+  assert.equal(arrow.height, -180);
+  assert.deepEqual(arrow.points, [
+    [0, 0],
+    [240, -180],
+  ]);
+  assert.deepEqual((arrow as { startBinding?: unknown }).startBinding, { elementId: "ellipse_ocean", focus: 0, gap: 1 });
+  assert.deepEqual((arrow as { endBinding?: unknown }).endBinding, { elementId: "ellipse_evaporation", focus: 0, gap: 1 });
+});
+
+function normalizeArrowLabels(elements: Record<string, unknown>[]): Record<string, unknown>[] {
+  return normalizeArrowLabelPlacement(
+    normalizeArrowGeometry(
+      normalizeArrowLabelClearance(normalizeTextRenderBounds(elements))
+    )
+  ) as Record<string, unknown>[];
+}
+
+test("findArrowLabelClearanceRisks reports labels that do not fit between connected shapes", () => {
+  const risks = findArrowLabelClearanceRisks([
+    { id: "rect_evaporation", type: "rectangle", x: 100, y: 100, width: 160, height: 80 },
+    { id: "rect_condensation", type: "rectangle", x: 320, y: 100, width: 160, height: 80 },
+    {
+      id: "arrow_evaporation_condensation",
+      type: "arrow",
+      x: 260,
+      y: 140,
+      width: 60,
+      height: 0,
+      startBinding: { elementId: "rect_evaporation" },
+      endBinding: { elementId: "rect_condensation" },
+    },
+    {
+      id: "arrow_evaporation_condensation_label",
+      type: "text",
+      x: 260,
+      y: 125,
+      width: 160,
+      height: 30,
+      text: "water goes up",
+      containerId: "arrow_evaporation_condensation",
+    },
+  ]);
+
+  assert.deepEqual(
+    risks.map((risk) => [risk.arrowId, risk.labelId, risk.axis]),
+    [["arrow_evaporation_condensation", "arrow_evaporation_condensation_label", "horizontal"]]
+  );
+  assert.equal(Math.round(risks[0]!.gap), 60);
+  assert.equal(Math.round(risks[0]!.requiredGap), 176);
+});
+
+test("normalizeArrowLabelClearance opens spacing and keeps arrow labels clear of shapes", () => {
+  const normalized = normalizeArrowLabels([
+    { id: "rect_evaporation", type: "rectangle", x: 100, y: 100, width: 160, height: 80 },
+    {
+      id: "rect_evaporation_label",
+      type: "text",
+      x: 100,
+      y: 100,
+      width: 160,
+      height: 80,
+      text: "Evaporation",
+      containerId: "rect_evaporation",
+    },
+    { id: "rect_condensation", type: "rectangle", x: 320, y: 100, width: 160, height: 80 },
+    {
+      id: "rect_condensation_label",
+      type: "text",
+      x: 320,
+      y: 100,
+      width: 160,
+      height: 80,
+      text: "Condensation",
+      containerId: "rect_condensation",
+    },
+    {
+      id: "arrow_evaporation_condensation",
+      type: "arrow",
+      x: 260,
+      y: 140,
+      width: 60,
+      height: 0,
+      startBinding: { elementId: "rect_evaporation" },
+      endBinding: { elementId: "rect_condensation" },
+    },
+    {
+      id: "arrow_evaporation_condensation_label",
+      type: "text",
+      x: 260,
+      y: 125,
+      width: 60,
+      height: 30,
+      text: "water goes up",
+      containerId: "arrow_evaporation_condensation",
+    },
+  ]);
+
+  const source = normalized.find((element) => element.id === "rect_evaporation")!;
+  const target = normalized.find((element) => element.id === "rect_condensation")!;
+  const targetLabel = normalized.find((element) => element.id === "rect_condensation_label")!;
+  const arrow = normalized.find((element) => element.id === "arrow_evaporation_condensation")!;
+  const arrowLabel = normalized.find((element) => element.id === "arrow_evaporation_condensation_label")!;
+  const sourceEdgeX = (source.x as number) + (source.width as number);
+  const gap = (target.x as number) - sourceEdgeX;
+  const expectedMidpointX = sourceEdgeX + gap / 2;
+  const targetLabelExpectedX =
+    (target.x as number) + 5 + (((target.width as number) - 10) / 2 - (targetLabel.width as number) / 2);
+
+  assert.ok(gap >= estimateTextRenderWidth("water goes up", 20) + 32);
+  assert.equal(targetLabel.x, targetLabelExpectedX);
+  assert.equal(arrow.x, sourceEdgeX);
+  assert.equal(arrow.y, 140);
+  assert.equal(arrow.width, gap);
+  assert.equal(arrow.height, 0);
+  assert.deepEqual(arrow.points, [
+    [0, 0],
+    [gap, 0],
+  ]);
+  assert.deepEqual((arrow as { startBinding?: unknown }).startBinding, { elementId: "rect_evaporation", focus: 0, gap: 1 });
+  assert.deepEqual((arrow as { endBinding?: unknown }).endBinding, { elementId: "rect_condensation", focus: 0, gap: 1 });
+  assert.equal(
+    (arrowLabel.x as number) + (arrowLabel.width as number) / 2,
+    expectedMidpointX
+  );
+  assert.deepEqual(findOverlaps(normalized), []);
+  assert.deepEqual(findArrowLabelClearanceRisks(normalized), []);
+});
+
+test("arrow label clearance normalization is idempotent", () => {
+  const first = normalizeArrowLabels([
+    { id: "rect_a", type: "rectangle", x: 100, y: 100, width: 160, height: 80 },
+    { id: "rect_b", type: "rectangle", x: 320, y: 100, width: 160, height: 80 },
+    {
+      id: "arrow_a_b",
+      type: "arrow",
+      x: 260,
+      y: 140,
+      width: 60,
+      height: 0,
+      startBinding: { elementId: "rect_a" },
+      endBinding: { elementId: "rect_b" },
+    },
+    {
+      id: "arrow_a_b_label",
+      type: "text",
+      x: 260,
+      y: 125,
+      width: 60,
+      height: 30,
+      text: "water goes up",
+      containerId: "arrow_a_b",
+    },
+  ]);
+  const second = normalizeArrowLabels(first);
+
+  assert.deepEqual(second, first);
 });
