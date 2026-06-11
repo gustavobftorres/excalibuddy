@@ -1,4 +1,8 @@
-import { findArrowAnchorRisks, findUnboundArrows } from "./arrow-geometry";
+import {
+  findArrowAnchorRisks,
+  findArrowLabelClearanceRisks,
+  findUnboundArrows,
+} from "./arrow-geometry";
 import { findOverlaps } from "./overlaps";
 import { findLabelRenderRisks } from "./text-rendering";
 
@@ -14,6 +18,7 @@ export type CanvasIssueKind =
   | "risky_label"
   | "unbound_arrow"
   | "arrow_anchor"
+  | "arrow_label_clearance"
   | "disconnected_shape";
 
 export interface CanvasIssue {
@@ -33,6 +38,7 @@ export interface CanvasVerificationResult {
     riskyLabels: number;
     unboundArrows: number;
     arrowAnchorRisks: number;
+    arrowLabelClearanceRisks: number;
     disconnectedShapes: number;
   };
   issues: CanvasIssue[];
@@ -118,6 +124,7 @@ export function verifyCanvasElements({
   const labelRisks = findLabelRenderRisks(elements);
   const unboundArrows = findUnboundArrows(elements);
   const arrowAnchorRisks = findArrowAnchorRisks(elements);
+  const arrowLabelClearanceRisks = findArrowLabelClearanceRisks(elements);
   const disconnectedShapeIds = findDisconnectedShapeIds(elements, userRequest);
 
   const issues: CanvasIssue[] = [
@@ -156,6 +163,19 @@ export function verifyCanvasElements({
       suggestion: `Straighten the arrow on the ${risk.axis} axis using the expected edge-center endpoints.`,
       details: risk as unknown as Record<string, unknown>,
     })),
+    ...arrowLabelClearanceRisks.map((risk) => ({
+      kind: "arrow_label_clearance" as const,
+      severity: "warning" as const,
+      elementIds: [risk.arrowId, risk.labelId, risk.startId, risk.endId],
+      message: `${risk.labelId} does not have enough clearance on ${risk.arrowId}.`,
+      suggestion: `Increase spacing between ${risk.startId} and ${risk.endId} to at least ${Math.ceil(risk.requiredGap)}px for the arrow label.`,
+      details: {
+        axis: risk.axis,
+        gap: risk.gap,
+        requiredGap: risk.requiredGap,
+        missingGap: risk.missingGap,
+      },
+    })),
     ...disconnectedShapeIds.map((id) => ({
       kind: "disconnected_shape" as const,
       severity: "error" as const,
@@ -173,6 +193,7 @@ export function verifyCanvasElements({
       riskyLabels: labelRisks.length,
       unboundArrows: unboundArrows.length,
       arrowAnchorRisks: arrowAnchorRisks.length,
+      arrowLabelClearanceRisks: arrowLabelClearanceRisks.length,
       disconnectedShapes: disconnectedShapeIds.length,
     },
     issues,

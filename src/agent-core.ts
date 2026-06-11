@@ -21,7 +21,11 @@ import { applySkeleton } from "./context/applySkeleton";
 import { findOverlaps } from "./context/overlaps";
 import { verifyCanvasElements } from "./context/verify-canvas";
 import { normalizeTextRenderBounds } from "./context/text-rendering";
-import { normalizeArrowGeometry } from "./context/arrow-geometry";
+import {
+  normalizeArrowGeometry,
+  normalizeArrowLabelClearance,
+  normalizeArrowLabelPlacement,
+} from "./context/arrow-geometry";
 import { cascadeRemoveElements } from "./context/remove-elements";
 
 export const SYSTEM_PROMPT = `# Role
@@ -223,8 +227,14 @@ export async function runAgent({
   // mutate it. queryCanvas reads from it; addElements/updateElements/
   // removeElements write to it.
   const sim: Record<string, unknown>[] = (seedCanvas as Record<string, unknown>[]).map((el) => ({ ...el }));
+  const normalizeElements = (elements: Record<string, unknown>[]) =>
+    normalizeArrowLabelPlacement(
+      normalizeArrowGeometry(
+        normalizeArrowLabelClearance(normalizeTextRenderBounds(elements))
+      )
+    ) as Record<string, unknown>[];
   const normalizeSim = () => {
-    const normalized = normalizeArrowGeometry(normalizeTextRenderBounds(sim)) as Record<string, unknown>[];
+    const normalized = normalizeElements(sim);
     sim.splice(0, sim.length, ...normalized);
   };
 
@@ -245,9 +255,7 @@ export async function runAgent({
         // arrow start/end shorthand becomes startBinding/endBinding. Without
         // this, the eval scorers read raw model claims and not what the
         // canvas would actually render.
-        const runtime = normalizeArrowGeometry(
-          normalizeTextRenderBounds(applySkeleton(elements as Record<string, unknown>[]))
-        );
+        const runtime = normalizeElements(applySkeleton(elements as Record<string, unknown>[]));
         for (const el of runtime) sim.push({ ...el });
         normalizeSim();
         // Surface overlaps in the tool result so the agent loop sees

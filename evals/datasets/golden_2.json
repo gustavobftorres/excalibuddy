@@ -1064,6 +1064,120 @@
     "category": "create"
   },
   {
+    "id": "modify-fix-arrow-label-clearance",
+    "input": "Check the canvas and fix the arrow label clearance",
+    "seed": {
+      "userPrompt": "draw a water cycle step from Evaporation to Condensation with an arrow labeled water goes up",
+      "assistantConfirmation": "Done. I drew the two steps connected by a labeled arrow.",
+      "elements": [
+        {
+          "id": "rect_evaporation",
+          "type": "rectangle",
+          "x": 100,
+          "y": 100,
+          "width": 160,
+          "height": 80,
+          "boundElements": [
+            {
+              "id": "rect_evaporation_label",
+              "type": "text"
+            },
+            {
+              "id": "arrow_evaporation_condensation",
+              "type": "arrow"
+            }
+          ]
+        },
+        {
+          "id": "rect_evaporation_label",
+          "type": "text",
+          "x": 100,
+          "y": 100,
+          "width": 160,
+          "height": 80,
+          "text": "Evaporation",
+          "containerId": "rect_evaporation"
+        },
+        {
+          "id": "rect_condensation",
+          "type": "rectangle",
+          "x": 320,
+          "y": 100,
+          "width": 160,
+          "height": 80,
+          "boundElements": [
+            {
+              "id": "rect_condensation_label",
+              "type": "text"
+            },
+            {
+              "id": "arrow_evaporation_condensation",
+              "type": "arrow"
+            }
+          ]
+        },
+        {
+          "id": "rect_condensation_label",
+          "type": "text",
+          "x": 320,
+          "y": 100,
+          "width": 160,
+          "height": 80,
+          "text": "Condensation",
+          "containerId": "rect_condensation"
+        },
+        {
+          "id": "arrow_evaporation_condensation",
+          "type": "arrow",
+          "x": 260,
+          "y": 140,
+          "width": 60,
+          "height": 0,
+          "startBinding": {
+            "elementId": "rect_evaporation"
+          },
+          "endBinding": {
+            "elementId": "rect_condensation"
+          },
+          "boundElements": [
+            {
+              "id": "arrow_evaporation_condensation_label",
+              "type": "text"
+            }
+          ]
+        },
+        {
+          "id": "arrow_evaporation_condensation_label",
+          "type": "text",
+          "x": 260,
+          "y": 125,
+          "width": 60,
+          "height": 30,
+          "text": "water goes up",
+          "containerId": "arrow_evaporation_condensation"
+        }
+      ]
+    },
+    "expectedCharacteristics": [
+      "Agent calls queryCanvas before changing the canvas",
+      "The water goes up arrow label remains readable and does not overlap either shape",
+      "The arrow remains bound from rect_evaporation to rect_condensation"
+    ],
+    "expectedKeywords": [
+      "evaporation",
+      "condensation",
+      "water"
+    ],
+    "preservedIds": [
+      "rect_evaporation",
+      "rect_condensation",
+      "arrow_evaporation_condensation",
+      "arrow_evaporation_condensation_label"
+    ],
+    "difficulty": "medium",
+    "category": "modify"
+  },
+  {
     "id": "create-tight-grid",
     "input": "Draw a 2x2 grid of labeled boxes: top-left A, top-right B, bottom-left C, bottom-right D, sharing edges",
     "expectedCharacteristics": [

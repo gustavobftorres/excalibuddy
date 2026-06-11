@@ -17,7 +17,9 @@ interface ShapeLike {
   id?: unknown;
   type?: unknown;
   x?: unknown;
+  y?: unknown;
   width?: unknown;
+  height?: unknown;
   customData?: unknown;
 }
 
@@ -33,6 +35,7 @@ export interface LabelRenderRisk {
 type UpdateElement = (element: unknown, updates: Record<string, unknown>) => unknown;
 
 const HORIZONTAL_PADDING = 8;
+const BOUND_TEXT_PADDING = 5;
 const AVERAGE_CHAR_WIDTH_RATIO = 0.62;
 const MIN_SAFE_TEXT_WIDTH = 16;
 const CONTAINER_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
@@ -83,8 +86,79 @@ function isContainerShape(el: ShapeLike): boolean {
     typeof el.type === "string" &&
     CONTAINER_TYPES.has(el.type) &&
     typeof el.x === "number" &&
-    typeof el.width === "number"
+    typeof el.y === "number" &&
+    typeof el.width === "number" &&
+    typeof el.height === "number"
   );
+}
+
+function getBoundTextContainerCoords(shape: ShapeLike): { x: number; y: number } | null {
+  if (
+    typeof shape.x !== "number" ||
+    typeof shape.y !== "number" ||
+    typeof shape.width !== "number" ||
+    typeof shape.height !== "number"
+  ) {
+    return null;
+  }
+
+  let offsetX = BOUND_TEXT_PADDING;
+  let offsetY = BOUND_TEXT_PADDING;
+  if (shape.type === "ellipse") {
+    offsetX += (shape.width / 2) * (1 - Math.sqrt(2) / 2);
+    offsetY += (shape.height / 2) * (1 - Math.sqrt(2) / 2);
+  }
+  if (shape.type === "diamond") {
+    offsetX += shape.width / 4;
+    offsetY += shape.height / 4;
+  }
+  return { x: shape.x + offsetX, y: shape.y + offsetY };
+}
+
+function getBoundTextMaxWidth(shape: ShapeLike): number | null {
+  if (typeof shape.width !== "number") return null;
+  if (shape.type === "ellipse") {
+    return Math.round((shape.width / 2) * Math.sqrt(2)) - BOUND_TEXT_PADDING * 2;
+  }
+  if (shape.type === "diamond") {
+    return Math.round(shape.width / 2) - BOUND_TEXT_PADDING * 2;
+  }
+  return shape.width - BOUND_TEXT_PADDING * 2;
+}
+
+function getBoundTextMaxHeight(shape: ShapeLike): number | null {
+  if (typeof shape.height !== "number") return null;
+  if (shape.type === "ellipse") {
+    return Math.round((shape.height / 2) * Math.sqrt(2)) - BOUND_TEXT_PADDING * 2;
+  }
+  if (shape.type === "diamond") {
+    return Math.round(shape.height / 2) - BOUND_TEXT_PADDING * 2;
+  }
+  return shape.height - BOUND_TEXT_PADDING * 2;
+}
+
+function requiredContainerWidthForBoundText(requiredTextWidth: number, containerType: unknown): number {
+  const padding = BOUND_TEXT_PADDING * 2;
+  if (containerType === "ellipse") {
+    return Math.round(((requiredTextWidth + padding) / Math.sqrt(2)) * 2);
+  }
+  if (containerType === "diamond") {
+    return 2 * (requiredTextWidth + padding);
+  }
+  return requiredTextWidth + padding;
+}
+
+function boundShapeTextPosition(label: TextLike, shape: ShapeLike): { x: number; y: number } | null {
+  if (typeof label.width !== "number" || typeof label.height !== "number") return null;
+  const coords = getBoundTextContainerCoords(shape);
+  const maxWidth = getBoundTextMaxWidth(shape);
+  const maxHeight = getBoundTextMaxHeight(shape);
+  if (!coords || maxWidth === null || maxHeight === null) return null;
+
+  return {
+    x: coords.x + (maxWidth / 2 - label.width / 2),
+    y: coords.y + (maxHeight / 2 - label.height / 2),
+  };
 }
 
 function normalizeWidth(
@@ -113,7 +187,8 @@ function normalizeTextElement(
   el: TextLike,
   requiredWidth: number,
   forceContainerCentering: boolean,
-  updateElement: UpdateElement
+  updateElement: UpdateElement,
+  containerShape?: ShapeLike
 ): unknown {
   const text = getText(el);
   if (
@@ -134,14 +209,21 @@ function normalizeTextElement(
 
   if (
     customData.textRenderBoundsNormalized === true &&
-    Object.keys(centeringUpdates).length === 0
+    Object.keys(centeringUpdates).length === 0 &&
+    !containerShape
   ) {
     return el;
   }
 
-  const normalized = normalizeWidth(el, requiredWidth, updateElement) as TextLike;
+  const normalized = (
+    containerShape
+      ? updateElement(el, { width: requiredWidth })
+      : normalizeWidth(el, requiredWidth, updateElement)
+  ) as TextLike;
+  const position = containerShape ? boundShapeTextPosition(normalized, containerShape) : null;
 
   return updateElement(normalized, {
+    ...(position ?? {}),
     ...centeringUpdates,
     customData: {
       ...customData,
@@ -171,24 +253,20 @@ export function normalizeTextRenderBounds<T extends readonly unknown[]>(
     const text = getText(el);
     if (el.type !== "text" || !text || typeof el.containerId !== "string") continue;
     const requiredWidth = requiredUnbrokenTextWidth(text, getFontSize(el));
+    const shape = elements.find(
+      (element) => (element as ShapeLike).id === el.containerId
+    ) as ShapeLike | undefined;
+    const requiredContainerWidth =
+      shape && isContainerShape(shape)
+        ? requiredContainerWidthForBoundText(requiredWidth, shape.type)
+        : requiredWidth;
     containerWidthById.set(
       el.containerId,
-      Math.max(containerWidthById.get(el.containerId) ?? 0, requiredWidth)
+      Math.max(containerWidthById.get(el.containerId) ?? 0, requiredContainerWidth)
     );
   }
 
-  return elements.map((element) => {
-    const el = element as TextLike;
-    const text = getText(el);
-    if (el.type === "text" && text) {
-      return normalizeTextElement(
-        el,
-        requiredTextRenderBoundsWidth(text, getFontSize(el)),
-        typeof el.containerId === "string" && shapeContainerIds.has(el.containerId),
-        updateElement
-      );
-    }
-
+  const normalizedContainers = elements.map((element) => {
     const shape = element as ShapeLike;
     if (!isContainerShape(shape)) return element;
     const requiredWidth = containerWidthById.get(shape.id);
@@ -198,6 +276,30 @@ export function normalizeTextRenderBounds<T extends readonly unknown[]>(
       x: shape.x - delta / 2,
       width: requiredWidth,
     });
+  });
+
+  const shapeById = new Map<string, ShapeLike>();
+  for (const element of normalizedContainers) {
+    const shape = element as ShapeLike;
+    if (isContainerShape(shape)) shapeById.set(shape.id as string, shape);
+  }
+
+  return normalizedContainers.map((element) => {
+    const el = element as TextLike;
+    const text = getText(el);
+    if (el.type === "text" && text) {
+      const containerShape =
+        typeof el.containerId === "string" ? shapeById.get(el.containerId) : undefined;
+      return normalizeTextElement(
+        el,
+        requiredTextRenderBoundsWidth(text, getFontSize(el)),
+        typeof el.containerId === "string" && shapeContainerIds.has(el.containerId),
+        updateElement,
+        containerShape
+      );
+    }
+
+    return element;
   }) as unknown as T;
 }
 

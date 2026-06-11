@@ -48,6 +48,43 @@ test("verifyCanvasElements skips connectivity for non relational requests", () =
   assert.equal(result.issues.some((issue) => issue.kind === "disconnected_shape"), false);
 });
 
+test("verifyCanvasElements reports unsafe arrow label clearance", () => {
+  const result = verifyCanvasElements({
+    userRequest: "Draw a flow from Evaporation to Condensation",
+    elements: [
+      { id: "rect_evaporation", type: "rectangle", x: 100, y: 100, width: 160, height: 80 },
+      { id: "rect_condensation", type: "rectangle", x: 320, y: 100, width: 160, height: 80 },
+      {
+        id: "arrow_evaporation_condensation",
+        type: "arrow",
+        x: 260,
+        y: 140,
+        width: 60,
+        height: 0,
+        startBinding: { elementId: "rect_evaporation" },
+        endBinding: { elementId: "rect_condensation" },
+      },
+      {
+        id: "arrow_evaporation_condensation_label",
+        type: "text",
+        x: 260,
+        y: 125,
+        width: 160,
+        height: 30,
+        text: "water goes up",
+        containerId: "arrow_evaporation_condensation",
+      },
+    ],
+  });
+
+  assert.equal(result.passed, false);
+  assert.equal(result.summary.arrowLabelClearanceRisks, 1);
+  assert.deepEqual(
+    result.issues.filter((issue) => issue.kind === "arrow_label_clearance").map((issue) => issue.elementIds),
+    [["arrow_evaporation_condensation", "arrow_evaporation_condensation_label", "rect_evaporation", "rect_condensation"]]
+  );
+});
+
 test("hasConnectivityIntent does not treat Process label edits as connected requests", () => {
   assert.equal(hasConnectivityIntent("rename the Process box to Validate"), false);
   assert.equal(

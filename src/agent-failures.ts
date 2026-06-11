@@ -20,6 +20,12 @@ export interface AgentFailureLog {
   toolName?: string;
 }
 
+export interface SerializableAgentError {
+  name?: string;
+  message: string;
+  cause?: string;
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
@@ -27,6 +33,23 @@ function getErrorMessage(error: unknown): string {
     return String((error as { message?: unknown }).message ?? "");
   }
   return "";
+}
+
+export function serializeAgentError(error: unknown): SerializableAgentError {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      cause: getErrorMessage(error.cause),
+    };
+  }
+  if (error && typeof error === "object") {
+    return {
+      name: "UnknownObject",
+      message: getErrorMessage(error) || JSON.stringify(error),
+    };
+  }
+  return { message: getErrorMessage(error) || String(error) };
 }
 
 export function classifyAgentFailure(error: unknown, online = true): AgentFailureKind {
@@ -111,7 +134,7 @@ export function getLatestToolFailure(messages: UIMessage[]): AgentFailureLog | n
 }
 
 export async function logAgentFailure(apiBaseUrl: string, failure: AgentFailureLog): Promise<void> {
-  console.warn("Agent failure", failure);
+  console.warn("Agent failure", JSON.stringify(failure));
   if (!apiBaseUrl) return;
   try {
     await fetch(`${apiBaseUrl}/api/traces/failure`, {

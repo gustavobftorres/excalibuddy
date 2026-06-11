@@ -24,13 +24,27 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "http://127.0.0.1:5173",
 ];
 
+function isLocalDevOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      (url.hostname === "localhost" ||
+        url.hostname === "127.0.0.1" ||
+        url.hostname === "[::1]")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function getCorsHeaders(request: Request, env: Env): HeadersInit {
   const origin = request.headers.get("Origin");
   const allowedOrigins = new Set(
     [...DEFAULT_ALLOWED_ORIGINS, env.FRONTEND_ORIGIN].filter(Boolean)
   );
 
-  if (!origin || !allowedOrigins.has(origin)) {
+  if (!origin || (!allowedOrigins.has(origin) && !isLocalDevOrigin(origin))) {
     return {};
   }
 
