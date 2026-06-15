@@ -9,6 +9,7 @@ import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import type { UIMessage } from "ai";
 import Canvas from "./components/Canvas";
+import { createElementCountNotifier } from "./components/canvas-element-count";
 import ChatPanel from "./components/chat/ChatPanel";
 import ExportDiagramButton, { type ExportStatus } from "./components/export/ExportDiagramButton";
 import FailureToaster from "./components/notifications/FailureToaster";
@@ -37,7 +38,8 @@ import {
 } from "./export/excalidraw-file";
 import { serializeCanvasState } from "./context/canvas-state";
 import { verifyCanvasElements } from "./context/verify-canvas";
-import { findOverlaps } from "./context/overlaps";
+import { summarizeCanvasHygiene } from "./context/canvas-hygiene";
+import { deferCanvasViewportRefresh } from "./canvas-refresh";
 import { applyCrossCallBindings, mergeBoundElements } from "./context/cross-call-bindings";
 import { cascadeRemoveElements } from "./context/remove-elements";
 import { normalizeTextRenderBounds } from "./context/text-rendering";
@@ -113,17 +115,15 @@ function normalizeCanvasElements<T extends readonly unknown[]>(elements: T): T {
   );
 }
 
-function refreshCanvasRender(api: ExcalidrawImperativeAPI) {
-  api.refresh();
-  requestAnimationFrame(() => api.refresh());
-  void document.fonts?.ready.then(() => api.refresh());
-}
-
 export default function App() {
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [canvasElementCount, setCanvasElementCount] = useState(0);
+  const elementCountNotifierRef = useRef(createElementCountNotifier(setCanvasElementCount, 0));
+  const setCanvasElementCountIfChanged = useCallback((count: number) => {
+    elementCountNotifierRef.current(count);
+  }, []);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState("");
   const [planningModeEnabled, setPlanningModeEnabled] = useState(() => {
@@ -294,17 +294,15 @@ export default function App() {
 
         const next = normalizeCanvasElements([...patchedExisting, ...newOnes]);
         api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-        setCanvasElementCount(getExportableElementCount(next as unknown[]));
-        refreshCanvasRender(api);
-        api.scrollToContent(next, { fitToContent: true });
-        // Detect overlaps in the post-add scene and surface them in the
+        setCanvasElementCountIfChanged(getExportableElementCount(next as unknown[]));
+        void deferCanvasViewportRefresh(api, next as unknown[]);
+        // Detect post-add hygiene issues and surface them in the
         // tool result so the agent's next reasoning step sees collisions
-        // and can self correct via updateElements. Same finding the
-        // noOverlaps eval scorer would report.
-        const overlaps = findOverlaps(next as unknown[]);
+        // and arrow path obstacles before final verification.
+        const hygiene = summarizeCanvasHygiene(next as unknown[]);
         addToolOutput({
           toolCallId: toolCall.toolCallId,
-          output: { added: newOnes.length, overlaps },
+          output: { added: newOnes.length, ...hygiene },
         });
         return;
       }
@@ -323,9 +321,12 @@ export default function App() {
             : el;
         }));
         api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-        setCanvasElementCount(getExportableElementCount(next as unknown[]));
-        refreshCanvasRender(api);
-        addToolOutput({ toolCallId: toolCall.toolCallId, output: { updated: byId.size } });
+        setCanvasElementCountIfChanged(getExportableElementCount(next as unknown[]));
+        void deferCanvasViewportRefresh(api);
+        addToolOutput({
+          toolCallId: toolCall.toolCallId,
+          output: { updated: byId.size, ...summarizeCanvasHygiene(next as unknown[]) },
+        });
         return;
       }
 
@@ -333,8 +334,8 @@ export default function App() {
         const { ids } = toolCall.input as { ids: string[] };
         const next = cascadeRemoveElements(api.getSceneElements(), ids);
         api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-        setCanvasElementCount(getExportableElementCount(next as unknown[]));
-        refreshCanvasRender(api);
+        setCanvasElementCountIfChanged(getExportableElementCount(next as unknown[]));
+        void deferCanvasViewportRefresh(api);
         addToolOutput({ toolCallId: toolCall.toolCallId, output: { removed: ids.length } });
         return;
       }
@@ -441,9 +442,9 @@ export default function App() {
     const api = excalidrawAPIRef.current;
     if (!api) return;
     api.updateScene({ elements: [], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-    setCanvasElementCount(0);
-    refreshCanvasRender(api);
-  }, []);
+    setCanvasElementCountIfChanged(0);
+    void deferCanvasViewportRefresh(api);
+  }, [setCanvasElementCountIfChanged]);
 
   const handleExportDiagram = useCallback(() => {
     const api = excalidrawAPIRef.current;
@@ -631,7 +632,7 @@ export default function App() {
       <div className="canvas-container">
         <Canvas
           onApiReady={handleApiReady}
-          onElementCountChange={setCanvasElementCount}
+          onElementCountChange={setCanvasElementCountIfChanged}
           onThemeChange={setTheme}
         />
         <ExportDiagramButton

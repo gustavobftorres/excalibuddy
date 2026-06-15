@@ -21,6 +21,7 @@ import { labelKeywordScorer } from "./scorers/labelKeyword";
 import { labelRenderBoundsScorer } from "./scorers/labelRenderBounds";
 import { boundArrowsScorer } from "./scorers/boundArrows";
 import { arrowAnchorGeometryScorer } from "./scorers/arrowAnchorGeometry";
+import { arrowPathObstaclesScorer } from "./scorers/arrowPathObstacles";
 import { boundLabelsScorer } from "./scorers/boundLabels";
 import { connectivityScorer } from "./scorers/connectivity";
 import { noOverlapsScorer } from "./scorers/noOverlaps";
@@ -71,6 +72,7 @@ Eval<GoldenTestCase, AgentOutput, GoldenTestCase>("Diagram Agent", {
     labelRenderBoundsScorer,
     boundArrowsScorer,
     arrowAnchorGeometryScorer,
+    arrowPathObstaclesScorer,
     boundLabelsScorer,
     connectivityScorer,
     noOverlapsScorer,

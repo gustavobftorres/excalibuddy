@@ -1193,5 +1193,21 @@
     ],
     "difficulty": "simple",
     "category": "create"
+  },
+  {
+    "id": "create-arrow-routes-around-middle-node",
+    "input": "Draw a process where Client sends a request to API Gateway, API Gateway sends it to Worker, and Client also receives a final response directly from Worker. Keep all three components visible and avoid arrows crossing through any component.",
+    "expectedCharacteristics": [
+      "3 labeled components: Client, API Gateway, Worker",
+      "Directional arrows for Client to API Gateway, API Gateway to Worker, and Worker to Client",
+      "The return arrow routes around intermediate components instead of crossing through them"
+    ],
+    "expectedKeywords": [
+      "client",
+      "api gateway",
+      "worker"
+    ],
+    "difficulty": "medium",
+    "category": "create"
   }
 ]

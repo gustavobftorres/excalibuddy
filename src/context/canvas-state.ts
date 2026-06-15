@@ -14,7 +14,7 @@
 
 import { findOverlaps } from "./overlaps";
 import { findLabelRenderRisks } from "./text-rendering";
-import { findArrowAnchorRisks, findUnboundArrows } from "./arrow-geometry";
+import { findArrowAnchorRisks, findArrowPathObstacleRisks, findUnboundArrows } from "./arrow-geometry";
 
 interface ElementLike {
   id?: unknown;
@@ -161,8 +161,15 @@ export function serializeCanvasState(elements: unknown[]): string {
           )
           .join("\n")}`
       : "";
+  const arrowPathObstacleRisks = findArrowPathObstacleRisks(elements);
+  const arrowPathObstacleLines =
+    arrowPathObstacleRisks.length > 0
+      ? `\n\nArrows crossing unrelated shapes (route these around blockers with intermediate points):\n${arrowPathObstacleRisks
+          .map((risk) => `- ${risk.arrowId}: crosses ${risk.blockedBy.join(", ")}`)
+          .join("\n")}`
+      : "";
 
   return `Canvas contains ${summary}:\n${lines.join(
     "\n"
-  )}${overlapLines}${labelRenderLines}${unboundArrowLines}${arrowAnchorLines}`;
+  )}${overlapLines}${labelRenderLines}${unboundArrowLines}${arrowAnchorLines}${arrowPathObstacleLines}`;
 }

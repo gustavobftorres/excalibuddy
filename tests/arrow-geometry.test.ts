@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   findArrowLabelClearanceRisks,
   findArrowAnchorRisks,
+  findArrowPathObstacleRisks,
   findUnboundArrows,
   normalizeArrowLabelClearance,
   normalizeArrowLabelPlacement,
@@ -397,6 +398,141 @@ test("normalizeArrowGeometry anchors diagonal arrows between non aligned shapes"
   ]);
   assert.deepEqual((arrow as { startBinding?: unknown }).startBinding, { elementId: "ellipse_ocean", focus: 0, gap: 1 });
   assert.deepEqual((arrow as { endBinding?: unknown }).endBinding, { elementId: "ellipse_evaporation", focus: 0, gap: 1 });
+});
+
+test("findArrowPathObstacleRisks reports straight arrows crossing unrelated shapes", () => {
+  const risks = findArrowPathObstacleRisks([
+    { id: "rect_a", type: "rectangle", x: 0, y: 100, width: 100, height: 80 },
+    { id: "rect_b", type: "rectangle", x: 180, y: 90, width: 100, height: 100 },
+    { id: "rect_c", type: "rectangle", x: 360, y: 100, width: 100, height: 80 },
+    {
+      id: "arrow_a_c",
+      type: "arrow",
+      x: 100,
+      y: 140,
+      width: 260,
+      height: 0,
+      points: [
+        [0, 0],
+        [260, 0],
+      ],
+      startBinding: { elementId: "rect_a", focus: 0, gap: 1 },
+      endBinding: { elementId: "rect_c", focus: 0, gap: 1 },
+    },
+  ]);
+
+  assert.deepEqual(risks, [
+    {
+      arrowId: "arrow_a_c",
+      startId: "rect_a",
+      endId: "rect_c",
+      blockedBy: ["rect_b"],
+    },
+  ]);
+});
+
+test("findArrowPathObstacleRisks accepts routed arrows around unrelated shapes", () => {
+  const risks = findArrowPathObstacleRisks([
+    { id: "rect_a", type: "rectangle", x: 0, y: 100, width: 100, height: 80 },
+    { id: "rect_b", type: "rectangle", x: 180, y: 90, width: 100, height: 100 },
+    { id: "rect_c", type: "rectangle", x: 360, y: 100, width: 100, height: 80 },
+    {
+      id: "arrow_a_c",
+      type: "arrow",
+      x: 100,
+      y: 140,
+      width: 260,
+      height: 0,
+      points: [
+        [0, 0],
+        [130, -90],
+        [260, 0],
+      ],
+      startBinding: { elementId: "rect_a", focus: 0, gap: 1 },
+      endBinding: { elementId: "rect_c", focus: 0, gap: 1 },
+    },
+  ]);
+
+  assert.deepEqual(risks, []);
+});
+
+test("findArrowPathObstacleRisks ignores endpoint shape contact", () => {
+  const risks = findArrowPathObstacleRisks([
+    { id: "rect_a", type: "rectangle", x: 0, y: 100, width: 100, height: 80 },
+    { id: "rect_b", type: "rectangle", x: 200, y: 100, width: 100, height: 80 },
+    {
+      id: "arrow_a_b",
+      type: "arrow",
+      x: 100,
+      y: 140,
+      width: 100,
+      height: 0,
+      points: [
+        [0, 0],
+        [100, 0],
+      ],
+      startBinding: { elementId: "rect_a", focus: 0, gap: 1 },
+      endBinding: { elementId: "rect_b", focus: 0, gap: 1 },
+    },
+  ]);
+
+  assert.deepEqual(risks, []);
+});
+
+test("normalizeArrowGeometry routes non-diamond arrows around blocking shapes", () => {
+  const normalized = normalizeArrowGeometry([
+    { id: "rect_a", type: "rectangle", x: 0, y: 100, width: 100, height: 80 },
+    { id: "rect_b", type: "rectangle", x: 180, y: 90, width: 100, height: 100 },
+    { id: "rect_c", type: "rectangle", x: 360, y: 100, width: 100, height: 80 },
+    {
+      id: "arrow_a_c",
+      type: "arrow",
+      x: 100,
+      y: 140,
+      width: 260,
+      height: 0,
+      startBinding: { elementId: "rect_a" },
+      endBinding: { elementId: "rect_c" },
+    },
+  ]) as Record<string, unknown>[];
+
+  const arrow = normalized.find((element) => element.id === "arrow_a_c")!;
+
+  assert.deepEqual(arrow.points, [
+    [0, 0],
+    [130, -86],
+    [260, 0],
+  ]);
+  assert.deepEqual(arrow.roundness, { type: 2 });
+  assert.deepEqual(findArrowPathObstacleRisks(normalized), []);
+});
+
+test("normalizeArrowGeometry uses wider external routes when a short curve would cross another shape", () => {
+  const normalized = normalizeArrowGeometry([
+    { id: "source", type: "rectangle", x: 0, y: 160, width: 100, height: 80 },
+    { id: "direct_blocker", type: "rectangle", x: 220, y: 150, width: 100, height: 100 },
+    { id: "top_lane_blocker", type: "rectangle", x: 360, y: 78, width: 120, height: 80 },
+    { id: "target", type: "rectangle", x: 640, y: 160, width: 100, height: 80 },
+    {
+      id: "arrow_source_target",
+      type: "arrow",
+      x: 100,
+      y: 200,
+      width: 540,
+      height: 0,
+      startBinding: { elementId: "source" },
+      endBinding: { elementId: "target" },
+    },
+  ]) as Record<string, unknown>[];
+
+  const arrow = normalized.find((element) => element.id === "arrow_source_target")!;
+  const points = arrow.points as number[][];
+  const routedY = (arrow.y as number) + points[1]![1]!;
+
+  assert.equal(points.length, 4);
+  assert.ok(routedY < 78 || routedY > 250);
+  assert.deepEqual(arrow.roundness, { type: 2 });
+  assert.deepEqual(findArrowPathObstacleRisks(normalized), []);
 });
 
 function normalizeArrowLabels(elements: Record<string, unknown>[]): Record<string, unknown>[] {
