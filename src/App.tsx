@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import {
   convertToExcalidrawElements,
@@ -10,6 +10,8 @@ import { useAgentChat } from "@cloudflare/ai-chat/react";
 import type { UIMessage } from "ai";
 import Canvas from "./components/Canvas";
 import { createElementCountNotifier } from "./components/canvas-element-count";
+import { createOneShotMessageIdGenerator } from "./chat-message-ids";
+import { deferClientToolExecution, getClientToolErrorMessage } from "./client-tool-scheduling";
 import ChatPanel from "./components/chat/ChatPanel";
 import ExportDiagramButton, { type ExportStatus } from "./components/export/ExportDiagramButton";
 import FailureToaster from "./components/notifications/FailureToaster";
@@ -154,11 +156,23 @@ export default function App() {
   const [failureNotices, setFailureNotices] = useState<AgentFailureNotice[]>([]);
   const pendingTurnIdRef = useRef<string | undefined>(undefined);
   const pendingAssistantMessageIdRef = useRef<string | undefined>(undefined);
+  const pendingGeneratedMessageIdRef = useRef<string | undefined>(undefined);
   const pendingAgentModeRef = useRef<AgentMode | undefined>(undefined);
   const finalizedAssistantIdsRef = useRef<Set<string>>(new Set());
   const resolvedPlanToolCallIdsRef = useRef<Set<string>>(new Set());
   const loggedFailureIdsRef = useRef<Set<string>>(new Set());
   const traceApiBaseUrl = getTraceApiBaseUrl(agentHost);
+  const generateChatMessageId = useMemo(
+    () =>
+      createOneShotMessageIdGenerator(
+        () => pendingGeneratedMessageIdRef.current,
+        () => {
+          pendingGeneratedMessageIdRef.current = undefined;
+        },
+        () => crypto.randomUUID()
+      ),
+    []
+  );
 
   // Hold the latest excalidrawAPI in a ref so onToolCall (captured once at
   // hook init) always reads the live API instead of a stale closure copy.
@@ -205,7 +219,8 @@ export default function App() {
   // addToolOutput so the agent loop resumes.
   const { messages, sendMessage, status } = useAgentChat({
     agent,
-    generateId: () => pendingAssistantMessageIdRef.current ?? crypto.randomUUID(),
+    experimental_throttle: 50,
+    generateId: generateChatMessageId,
     body: () =>
       buildAgentRequestBody({
         sessionId,
@@ -217,127 +232,138 @@ export default function App() {
         currentAgentMode: agentMode,
       }),
     onToolCall: async ({ toolCall, addToolOutput }) => {
-      const api = excalidrawAPIRef.current;
-      if (
-        planningModeEnabled &&
-        (toolCall.toolName === "queryCanvas" ||
-          toolCall.toolName === "addElements" ||
-          toolCall.toolName === "updateElements" ||
-          toolCall.toolName === "removeElements" ||
-          toolCall.toolName === "verifyCanvas")
-      ) {
-        setPlanningModeNotice(
-          "Planning mode is still on. Turn it off to let the agent modify the canvas."
-        );
-        addToolOutput({
-          toolCallId: toolCall.toolCallId,
-          output: {
-            error: "planning mode enabled; disable it before executing the plan",
-          },
-        });
-        return;
-      }
+      await deferClientToolExecution();
 
-      if (!api) {
-        addToolOutput({ toolCallId: toolCall.toolCallId, output: { error: "canvas not ready" } });
-        return;
-      }
-
-      if (toolCall.toolName === "queryCanvas") {
-        addToolOutput({
-          toolCallId: toolCall.toolCallId,
-          output: { summary: serializeCanvasState(api.getSceneElements() as unknown[]) },
-        });
-        return;
-      }
-
-      if (toolCall.toolName === "verifyCanvas") {
-        const { userRequest } = toolCall.input as { userRequest: string };
-        addToolOutput({
-          toolCallId: toolCall.toolCallId,
-          output: verifyCanvasElements({
-            userRequest,
-            elements: api.getSceneElements() as unknown[],
-          }),
-        });
-        return;
-      }
-
-      if (toolCall.toolName === "addElements") {
-        const { elements } = toolCall.input as { elements: unknown[] };
-        // Strip null fields recursively before handing to
-        // convertToExcalidrawElements. Our nullable schema forces the model
-        // to send every field, but the skeleton helper expects undefined
-        // (not null) for "use the default" and chokes on `label: null` or
-        // `start: null`.
-        const cleaned = elements.map(stripNulls) as Record<string, unknown>[];
-        const newOnes = convertToExcalidrawElements(cleaned as never, { regenerateIds: false });
-
-        // Patch arrow bindings that reference shapes already on the canvas
-        // (the helper only resolves bindings within its own input batch).
-        // See src/context/cross-call-bindings.ts for the gory details.
-        const existingScene = api.getSceneElements();
-        const { arrowsByTargetId } = applyCrossCallBindings(
-          cleaned,
-          newOnes as unknown as { id: string; startBinding?: unknown; endBinding?: unknown }[],
-          existingScene as unknown as { id: string }[]
-        );
-        const patchedExisting = existingScene.map((el) => {
-          const incoming = arrowsByTargetId.get(el.id);
-          if (!incoming || incoming.length === 0) return el;
-          const merged = mergeBoundElements(
-            el as unknown as { id: string; boundElements?: readonly { id: string; type: string }[] },
-            incoming
+      try {
+        const api = excalidrawAPIRef.current;
+        if (
+          planningModeEnabled &&
+          (toolCall.toolName === "queryCanvas" ||
+            toolCall.toolName === "addElements" ||
+            toolCall.toolName === "updateElements" ||
+            toolCall.toolName === "removeElements" ||
+            toolCall.toolName === "verifyCanvas")
+        ) {
+          setPlanningModeNotice(
+            "Planning mode is still on. Turn it off to let the agent modify the canvas."
           );
-          return newElementWith(el, { boundElements: merged } as never);
-        });
+          addToolOutput({
+            toolCallId: toolCall.toolCallId,
+            output: {
+              error: "planning mode enabled; disable it before executing the plan",
+            },
+          });
+          return;
+        }
 
-        const next = normalizeCanvasElements([...patchedExisting, ...newOnes]);
-        api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-        setCanvasElementCountIfChanged(getExportableElementCount(next as unknown[]));
-        void deferCanvasViewportRefresh(api, next as unknown[]);
-        // Detect post-add hygiene issues and surface them in the
-        // tool result so the agent's next reasoning step sees collisions
-        // and arrow path obstacles before final verification.
-        const hygiene = summarizeCanvasHygiene(next as unknown[]);
+        if (!api) {
+          addToolOutput({ toolCallId: toolCall.toolCallId, output: { error: "canvas not ready" } });
+          return;
+        }
+
+        if (toolCall.toolName === "queryCanvas") {
+          addToolOutput({
+            toolCallId: toolCall.toolCallId,
+            output: { summary: serializeCanvasState(api.getSceneElements() as unknown[]) },
+          });
+          return;
+        }
+
+        if (toolCall.toolName === "verifyCanvas") {
+          const { userRequest } = toolCall.input as { userRequest: string };
+          addToolOutput({
+            toolCallId: toolCall.toolCallId,
+            output: verifyCanvasElements({
+              userRequest,
+              elements: api.getSceneElements() as unknown[],
+            }),
+          });
+          return;
+        }
+
+        if (toolCall.toolName === "addElements") {
+          const { elements } = toolCall.input as { elements: unknown[] };
+          // Strip null fields recursively before handing to
+          // convertToExcalidrawElements. Our nullable schema forces the model
+          // to send every field, but the skeleton helper expects undefined
+          // (not null) for "use the default" and chokes on `label: null` or
+          // `start: null`.
+          const cleaned = elements.map(stripNulls) as Record<string, unknown>[];
+          const newOnes = convertToExcalidrawElements(cleaned as never, { regenerateIds: false });
+
+          // Patch arrow bindings that reference shapes already on the canvas
+          // (the helper only resolves bindings within its own input batch).
+          // See src/context/cross-call-bindings.ts for the gory details.
+          const existingScene = api.getSceneElements();
+          const { arrowsByTargetId } = applyCrossCallBindings(
+            cleaned,
+            newOnes as unknown as { id: string; startBinding?: unknown; endBinding?: unknown }[],
+            existingScene as unknown as { id: string }[]
+          );
+          const patchedExisting = existingScene.map((el) => {
+            const incoming = arrowsByTargetId.get(el.id);
+            if (!incoming || incoming.length === 0) return el;
+            const merged = mergeBoundElements(
+              el as unknown as { id: string; boundElements?: readonly { id: string; type: string }[] },
+              incoming
+            );
+            return newElementWith(el, { boundElements: merged } as never);
+          });
+
+          const next = normalizeCanvasElements([...patchedExisting, ...newOnes]);
+          api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+          setCanvasElementCountIfChanged(getExportableElementCount(next as unknown[]));
+          void deferCanvasViewportRefresh(api, next as unknown[]);
+          // Detect post-add hygiene issues and surface them in the
+          // tool result so the agent's next reasoning step sees collisions
+          // and arrow path obstacles before final verification.
+          const hygiene = summarizeCanvasHygiene(next as unknown[]);
+          addToolOutput({
+            toolCallId: toolCall.toolCallId,
+            output: { added: newOnes.length, ...hygiene },
+          });
+          return;
+        }
+
+        if (toolCall.toolName === "updateElements") {
+          const { updates } = toolCall.input as {
+            updates: { id: string; fields: Record<string, unknown> }[];
+          };
+          const byId = new Map(
+            updates.map((u) => [u.id, stripNulls(u.fields) as Record<string, unknown>])
+          );
+          const next = normalizeCanvasElements(api.getSceneElements().map((el) => {
+            const fields = byId.get(el.id);
+            return fields && Object.keys(fields).length > 0
+              ? newElementWith(el, fields as never)
+              : el;
+          }));
+          api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+          setCanvasElementCountIfChanged(getExportableElementCount(next as unknown[]));
+          void deferCanvasViewportRefresh(api);
+          addToolOutput({
+            toolCallId: toolCall.toolCallId,
+            output: { updated: byId.size, ...summarizeCanvasHygiene(next as unknown[]) },
+          });
+          return;
+        }
+
+        if (toolCall.toolName === "removeElements") {
+          const { ids } = toolCall.input as { ids: string[] };
+          const next = cascadeRemoveElements(api.getSceneElements(), ids);
+          api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+          setCanvasElementCountIfChanged(getExportableElementCount(next as unknown[]));
+          void deferCanvasViewportRefresh(api);
+          addToolOutput({ toolCallId: toolCall.toolCallId, output: { removed: ids.length } });
+          return;
+        }
+      } catch (error) {
+        console.error(`Client tool ${toolCall.toolName} failed`, error);
         addToolOutput({
           toolCallId: toolCall.toolCallId,
-          output: { added: newOnes.length, ...hygiene },
+          state: "output-error",
+          errorText: getClientToolErrorMessage(error),
         });
-        return;
-      }
-
-      if (toolCall.toolName === "updateElements") {
-        const { updates } = toolCall.input as {
-          updates: { id: string; fields: Record<string, unknown> }[];
-        };
-        const byId = new Map(
-          updates.map((u) => [u.id, stripNulls(u.fields) as Record<string, unknown>])
-        );
-        const next = normalizeCanvasElements(api.getSceneElements().map((el) => {
-          const fields = byId.get(el.id);
-          return fields && Object.keys(fields).length > 0
-            ? newElementWith(el, fields as never)
-            : el;
-        }));
-        api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-        setCanvasElementCountIfChanged(getExportableElementCount(next as unknown[]));
-        void deferCanvasViewportRefresh(api);
-        addToolOutput({
-          toolCallId: toolCall.toolCallId,
-          output: { updated: byId.size, ...summarizeCanvasHygiene(next as unknown[]) },
-        });
-        return;
-      }
-
-      if (toolCall.toolName === "removeElements") {
-        const { ids } = toolCall.input as { ids: string[] };
-        const next = cascadeRemoveElements(api.getSceneElements(), ids);
-        api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-        setCanvasElementCountIfChanged(getExportableElementCount(next as unknown[]));
-        void deferCanvasViewportRefresh(api);
-        addToolOutput({ toolCallId: toolCall.toolCallId, output: { removed: ids.length } });
-        return;
       }
     },
     onError: (error) => {
@@ -419,6 +445,7 @@ export default function App() {
       setFailureNotices([]);
       pendingTurnIdRef.current = turnId;
       pendingAssistantMessageIdRef.current = assistantMessageId;
+      pendingGeneratedMessageIdRef.current = assistantMessageId;
       pendingAgentModeRef.current = nextMode;
       sendMessage({
         ...message,
