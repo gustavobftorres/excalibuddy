@@ -77,6 +77,7 @@ export class DesignAgent extends AIChatAgent<Env> {
         ? options.body.turnId
         : latestUserMetadata.turnId ?? options?.requestId ?? crypto.randomUUID();
     const mode = options?.body?.mode === "planning" ? "planning" : "build";
+    const webSearchRequired = options?.body?.webSearchEnabled === true;
     const sessionId =
       typeof options?.body?.sessionId === "string"
         ? options.body.sessionId
@@ -191,6 +192,7 @@ export class DesignAgent extends AIChatAgent<Env> {
         UPSTASH_VECTOR_REST_URL: this.env.UPSTASH_VECTOR_REST_URL,
         UPSTASH_VECTOR_REST_TOKEN: this.env.UPSTASH_VECTOR_REST_TOKEN,
       },
+      webSearchRequired,
     };
 
     const result = mode === "planning" ? streamPlanningAgent(agentArgs) : streamAgent(agentArgs);

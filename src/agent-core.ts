@@ -11,6 +11,7 @@ import {
   tool,
   type LanguageModel,
   type ModelMessage,
+  type PrepareStepFunction,
   type StreamTextOnErrorCallback,
   type StreamTextOnFinishCallback,
 } from "ai";
@@ -39,7 +40,7 @@ You are a technical diagram design assistant that controls an Excalidraw canvas.
 - **addElements(elements)** add new elements to the canvas. Use for creating diagrams or appending to existing ones.
 - **updateElements(updates)** change properties of existing elements by id. Use for recoloring, repositioning, relabeling, resizing.
 - **removeElements(ids)** delete elements by id.
-- **searchWeb(query)** search the web for current information. Use when the user asks about recent technology, frameworks, or systems where you may not have up to date knowledge. Search first, then draw.
+- **searchWeb(query)** search the web for current information. Web search is user-controlled: when the user enables Search web, you MUST call this before drawing, using the user's request or necessary context as the query; when Search web is disabled, do not call it unless the user explicitly asks you to search the web.
 - **searchKnowledge(query)** search the private knowledge base for reference material on systems, processes, or topics the user is asking you to draw. Use this BEFORE drawing when the request touches a specific technical system, protocol, organizational structure, or process where precise details matter. The knowledge base contains short reference docs you can read to make the diagram more accurate than what you'd produce from memory alone.
 
 # Hard rules
@@ -95,7 +96,7 @@ Recognize the pattern, then follow its layout.
 - **Query before you modify.** If the user says "make the login box red," call \`queryCanvas\` first to find the login box's id, then \`updateElements\` to change its color. Never invent ids.
 - **Prefer updateElements for tweaks.** Don't redraw the whole diagram when one element changes.
 - **Preserve what exists.** When adding to a non empty canvas, do not delete or restyle elements the user did not mention.
-- **Search the web for fresh facts.** If the user asks about a system you might not know well, call \`searchWeb\` before drawing.
+- **Respect the Search web setting.** If Search web is enabled for this turn, call \`searchWeb\` before drawing. If Search web is disabled, do not autonomously call \`searchWeb\`; only call it when the user explicitly asks for web search.
 - **Ask one clarifying question only if the request is genuinely ambiguous.** Make reasonable choices and draw.
 
 # Worked example: a labeled flow
@@ -129,7 +130,7 @@ Clarify the user's diagram request, identify missing details, and produce a conc
 # Tools
 
 - **requestPlanApproval(...)** present the final plan for user approval. Use this once the request is clear enough to build.
-- **searchWeb(query)** search the web for current information if the diagram depends on fresh facts.
+- **searchWeb(query)** search the web for current information. Web search is user-controlled: when the user enables Search web, you MUST call this before finalizing the plan, using the user's request or necessary context as the query; when Search web is disabled, do not call it unless the user explicitly asks you to search the web.
 - **searchKnowledge(query)** search the private knowledge base for technical reference material before finalizing the plan.
 
 # Hard rules
@@ -145,7 +146,7 @@ Clarify the user's diagram request, identify missing details, and produce a conc
 - Prefer one tight follow-up question over a long questionnaire.
 - Make reasonable assumptions when the missing detail is low risk, and record those assumptions in the plan.
 - Keep the plan implementation-oriented so the build phase can draw directly from it.
-- If the request depends on current technical facts, use search tools before finalizing the plan.`;
+- Respect the Search web setting. If Search web is enabled for this turn, call \`searchWeb\` before finalizing the plan. If Search web is disabled, do not autonomously call \`searchWeb\`; only call it when the user explicitly asks for web search.`;
 
 interface AgentArgs {
   model: LanguageModel;
@@ -165,6 +166,21 @@ interface AgentArgs {
     UPSTASH_VECTOR_REST_URL?: string;
     UPSTASH_VECTOR_REST_TOKEN?: string;
   };
+  webSearchRequired?: boolean;
+}
+
+export function buildWebSearchPrepareStep(
+  webSearchRequired: boolean
+): PrepareStepFunction<any> | undefined {
+  if (!webSearchRequired) return undefined;
+
+  return ({ stepNumber }) => {
+    if (stepNumber !== 0) return undefined;
+    return {
+      toolChoice: { type: "tool", toolName: "searchWeb" },
+      activeTools: ["searchWeb"],
+    };
+  };
 }
 
 // Streaming variant. Used by the worker for the live chat experience.
@@ -176,12 +192,14 @@ export function streamAgent({
   onFinish,
   onError,
   env = {},
+  webSearchRequired = false,
 }: AgentArgs) {
   return streamText({
     model,
     system,
     messages,
     tools: buildTools(env),
+    prepareStep: buildWebSearchPrepareStep(webSearchRequired),
     stopWhen: stepCountIs(maxSteps),
     timeout: { totalMs: 60000, chunkMs: 20000 },
     onFinish,
@@ -197,12 +215,14 @@ export function streamPlanningAgent({
   onFinish,
   onError,
   env = {},
+  webSearchRequired = false,
 }: AgentArgs) {
   return streamText({
     model,
     system,
     messages,
     tools: buildPlanningTools(env),
+    prepareStep: buildWebSearchPrepareStep(webSearchRequired),
     stopWhen: [hasToolCall("requestPlanApproval"), stepCountIs(maxSteps)],
     timeout: { totalMs: 60000, chunkMs: 20000 },
     onFinish,

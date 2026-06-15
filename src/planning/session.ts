@@ -8,6 +8,7 @@ export interface AgentRequestBodyInput {
   assistantMessageId?: string;
   requestedMode?: AgentMode;
   planningModeEnabled: boolean;
+  webSearchEnabled: boolean;
   currentAgentMode: AgentMode;
 }
 
@@ -19,6 +20,7 @@ export function buildAgentRequestBody(input: AgentRequestBodyInput) {
     mode:
       input.requestedMode ??
       (input.planningModeEnabled ? "planning" : input.currentAgentMode),
+    webSearchEnabled: input.webSearchEnabled,
   };
 }
 
