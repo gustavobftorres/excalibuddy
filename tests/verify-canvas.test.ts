@@ -85,6 +85,38 @@ test("verifyCanvasElements reports unsafe arrow label clearance", () => {
   );
 });
 
+test("verifyCanvasElements reports arrows crossing unrelated shapes", () => {
+  const result = verifyCanvasElements({
+    userRequest: "Draw a flow from A to C around B",
+    elements: [
+      { id: "rect_a", type: "rectangle", x: 0, y: 100, width: 100, height: 80 },
+      { id: "rect_b", type: "rectangle", x: 180, y: 90, width: 100, height: 100 },
+      { id: "rect_c", type: "rectangle", x: 360, y: 100, width: 100, height: 80 },
+      {
+        id: "arrow_a_c",
+        type: "arrow",
+        x: 100,
+        y: 140,
+        width: 260,
+        height: 0,
+        points: [
+          [0, 0],
+          [260, 0],
+        ],
+        startBinding: { elementId: "rect_a", focus: 0, gap: 1 },
+        endBinding: { elementId: "rect_c", focus: 0, gap: 1 },
+      },
+    ],
+  });
+
+  assert.equal(result.passed, false);
+  assert.equal(result.summary.arrowPathObstacleRisks, 1);
+  assert.deepEqual(
+    result.issues.filter((issue) => issue.kind === "arrow_path_obstacle").map((issue) => issue.elementIds),
+    [["arrow_a_c", "rect_b", "rect_a", "rect_c"]]
+  );
+});
+
 test("hasConnectivityIntent does not treat Process label edits as connected requests", () => {
   assert.equal(hasConnectivityIntent("rename the Process box to Validate"), false);
   assert.equal(

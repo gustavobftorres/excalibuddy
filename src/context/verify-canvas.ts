@@ -1,6 +1,7 @@
 import {
   findArrowAnchorRisks,
   findArrowLabelClearanceRisks,
+  findArrowPathObstacleRisks,
   findUnboundArrows,
 } from "./arrow-geometry";
 import { findOverlaps } from "./overlaps";
@@ -19,6 +20,7 @@ export type CanvasIssueKind =
   | "unbound_arrow"
   | "arrow_anchor"
   | "arrow_label_clearance"
+  | "arrow_path_obstacle"
   | "disconnected_shape";
 
 export interface CanvasIssue {
@@ -39,6 +41,7 @@ export interface CanvasVerificationResult {
     unboundArrows: number;
     arrowAnchorRisks: number;
     arrowLabelClearanceRisks: number;
+    arrowPathObstacleRisks: number;
     disconnectedShapes: number;
   };
   issues: CanvasIssue[];
@@ -125,6 +128,7 @@ export function verifyCanvasElements({
   const unboundArrows = findUnboundArrows(elements);
   const arrowAnchorRisks = findArrowAnchorRisks(elements);
   const arrowLabelClearanceRisks = findArrowLabelClearanceRisks(elements);
+  const arrowPathObstacleRisks = findArrowPathObstacleRisks(elements);
   const disconnectedShapeIds = findDisconnectedShapeIds(elements, userRequest);
 
   const issues: CanvasIssue[] = [
@@ -176,6 +180,14 @@ export function verifyCanvasElements({
         missingGap: risk.missingGap,
       },
     })),
+    ...arrowPathObstacleRisks.map((risk) => ({
+      kind: "arrow_path_obstacle" as const,
+      severity: "warning" as const,
+      elementIds: [risk.arrowId, ...risk.blockedBy, risk.startId, risk.endId],
+      message: `${risk.arrowId} crosses unrelated shape ${risk.blockedBy.join(", ")}.`,
+      suggestion: "Route the arrow around blockers using intermediate points and roundness.",
+      details: risk as unknown as Record<string, unknown>,
+    })),
     ...disconnectedShapeIds.map((id) => ({
       kind: "disconnected_shape" as const,
       severity: "error" as const,
@@ -194,6 +206,7 @@ export function verifyCanvasElements({
       unboundArrows: unboundArrows.length,
       arrowAnchorRisks: arrowAnchorRisks.length,
       arrowLabelClearanceRisks: arrowLabelClearanceRisks.length,
+      arrowPathObstacleRisks: arrowPathObstacleRisks.length,
       disconnectedShapes: disconnectedShapeIds.length,
     },
     issues,

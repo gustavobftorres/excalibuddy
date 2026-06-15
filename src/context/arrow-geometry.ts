@@ -66,6 +66,13 @@ export interface ArrowLabelClearanceRisk {
   missingGap: number;
 }
 
+export interface ArrowPathObstacleRisk {
+  arrowId: string;
+  startId: string;
+  endId: string;
+  blockedBy: string[];
+}
+
 type UpdateElement = (element: unknown, updates: Record<string, unknown>) => unknown;
 
 const SHAPE_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
@@ -74,6 +81,7 @@ const ANCHOR_TOLERANCE = 10;
 const BINDING_TOLERANCE = 0.001;
 const EDGE_CENTER_BINDING_GAP = 1;
 const ROUTE_CLEARANCE = 36;
+const OUTER_ROUTE_CLEARANCE = 96;
 const ARROW_LABEL_CLEARANCE_PADDING = 16;
 
 function isShape(el: ElementLike): el is ShapeBox {
@@ -322,29 +330,114 @@ function blockingShapes(
   return blockers;
 }
 
+function routeBlockers(
+  points: readonly Point[],
+  shapes: Iterable<ShapeBox>,
+  startId: string,
+  endId: string
+): ShapeBox[] {
+  const blockers = new Map<string, ShapeBox>();
+  for (let i = 0; i < points.length - 1; i++) {
+    for (const blocker of blockingShapes(points[i]!, points[i + 1]!, shapes, startId, endId)) {
+      blockers.set(blocker.id, blocker);
+    }
+  }
+  return [...blockers.values()];
+}
+
+function routeHasBlockers(
+  points: readonly Point[],
+  shapes: Iterable<ShapeBox>,
+  startId: string,
+  endId: string
+): boolean {
+  return routeBlockers(points, shapes, startId, endId).length > 0;
+}
+
+function sortClosestFirst(values: [number, number], reference: number): [number, number] {
+  return Math.abs(reference - values[0]) <= Math.abs(reference - values[1])
+    ? values
+    : [values[1], values[0]];
+}
+
+function externalRoutes(
+  start: Point,
+  end: Point,
+  boundsSource: readonly ShapeBox[],
+  horizontal: boolean
+): Point[][] {
+  if (boundsSource.length === 0) return [];
+
+  if (horizontal) {
+    const top =
+      Math.min(...boundsSource.map((shape) => shapeBounds(shape).top)) - OUTER_ROUTE_CLEARANCE;
+    const bottom =
+      Math.max(...boundsSource.map((shape) => shapeBounds(shape).bottom)) + OUTER_ROUTE_CLEARANCE;
+    return sortClosestFirst([top, bottom], start.y).map((y) => [
+      start,
+      { x: start.x, y },
+      { x: end.x, y },
+      end,
+    ]);
+  }
+
+  const left =
+    Math.min(...boundsSource.map((shape) => shapeBounds(shape).left)) - OUTER_ROUTE_CLEARANCE;
+  const right =
+    Math.max(...boundsSource.map((shape) => shapeBounds(shape).right)) + OUTER_ROUTE_CLEARANCE;
+  return sortClosestFirst([left, right], start.x).map((x) => [
+    start,
+    { x, y: start.y },
+    { x, y: end.y },
+    end,
+  ]);
+}
+
 function routeAroundShapes(
   start: Point,
   end: Point,
   shapes: Iterable<ShapeBox>,
   startId: string,
-  endId: string
+  endId: string,
+  useExternalFallback = true
 ): Point[] {
-  const blockers = blockingShapes(start, end, shapes, startId, endId);
+  const shapeList = [...shapes];
+  const blockers = blockingShapes(start, end, shapeList, startId, endId);
   if (blockers.length === 0) return [start, end];
 
   const horizontal = Math.abs(end.x - start.x) >= Math.abs(end.y - start.y);
+  let shortRoute: Point[];
   if (horizontal) {
     const top = Math.min(...blockers.map((shape) => shapeBounds(shape).top)) - ROUTE_CLEARANCE;
     const bottom =
       Math.max(...blockers.map((shape) => shapeBounds(shape).bottom)) + ROUTE_CLEARANCE;
     const y = Math.abs(start.y - top) <= Math.abs(start.y - bottom) ? top : bottom;
-    return [start, { x: start.x + (end.x - start.x) / 2, y }, end];
+    shortRoute = [start, { x: start.x + (end.x - start.x) / 2, y }, end];
+  } else {
+    const left = Math.min(...blockers.map((shape) => shapeBounds(shape).left)) - ROUTE_CLEARANCE;
+    const right = Math.max(...blockers.map((shape) => shapeBounds(shape).right)) + ROUTE_CLEARANCE;
+    const x = Math.abs(start.x - left) <= Math.abs(start.x - right) ? left : right;
+    shortRoute = [start, { x, y: start.y + (end.y - start.y) / 2 }, end];
   }
 
-  const left = Math.min(...blockers.map((shape) => shapeBounds(shape).left)) - ROUTE_CLEARANCE;
-  const right = Math.max(...blockers.map((shape) => shapeBounds(shape).right)) + ROUTE_CLEARANCE;
-  const x = Math.abs(start.x - left) <= Math.abs(start.x - right) ? left : right;
-  return [start, { x, y: start.y + (end.y - start.y) / 2 }, end];
+  const shortRouteBlockers = routeBlockers(shortRoute, shapeList, startId, endId);
+  if (shortRouteBlockers.length === 0 || !useExternalFallback) return shortRoute;
+
+  const localBoundsSource = [...new Map([...blockers, ...shortRouteBlockers].map((shape) => [shape.id, shape])).values()];
+  const candidates = [
+    ...externalRoutes(start, end, localBoundsSource, horizontal),
+    ...externalRoutes(
+      start,
+      end,
+      shapeList.filter((shape) => shape.id !== startId && shape.id !== endId),
+      horizontal
+    ),
+  ];
+  return (
+    candidates.find((candidate) => !routeHasBlockers(candidate, shapeList, startId, endId)) ??
+    candidates[0] ??
+    shortRoute
+  );
 }
 
 function routeAroundReciprocalPair(start: Point, end: Point, startShape: ShapeBox, endShape: ShapeBox): Point[] {
@@ -581,6 +674,35 @@ export function findArrowLabelClearanceRisks(elements: unknown[]): ArrowLabelCle
   return risks.sort((a, b) => a.arrowId.localeCompare(b.arrowId));
 }
 
+export function findArrowPathObstacleRisks(elements: unknown[]): ArrowPathObstacleRisk[] {
+  const shapes = shapeById(elements);
+  const risks: ArrowPathObstacleRisk[] = [];
+
+  for (const element of elements) {
+    const arrow = element as ElementLike;
+    if (arrow.type !== "arrow" || typeof arrow.id !== "string") continue;
+    const { startId, endId } = getBindingIds(arrow);
+    if (!startId || !endId) continue;
+    if (!shapes.has(startId) || !shapes.has(endId)) continue;
+
+    const points = absoluteRoutePoints(arrow);
+    if (!points || points.length < 2) continue;
+
+    const blockedBy = new Set<string>();
+    for (let i = 0; i < points.length - 1; i++) {
+      for (const blocker of blockingShapes(points[i]!, points[i + 1]!, shapes.values(), startId, endId)) {
+        blockedBy.add(blocker.id);
+      }
+    }
+
+    if (blockedBy.size > 0) {
+      risks.push({ arrowId: arrow.id, startId, endId, blockedBy: [...blockedBy].sort() });
+    }
+  }
+
+  return risks.sort((a, b) => a.arrowId.localeCompare(b.arrowId));
+}
+
 function shiftElement(
   element: unknown,
   dx: number,
@@ -711,8 +833,8 @@ export function normalizeArrowGeometry<T extends readonly unknown[]>(
     const points = reciprocalReturns.has(arrow.id as string)
       ? routeAroundReciprocalPair(start, end, startShape, endShape)
       : hasDiamond
-        ? routeAroundShapes(start, end, shapes.values(), startId, endId)
-        : [start, end];
+        ? routeAroundShapes(start, end, shapes.values(), startId, endId, false)
+        : routeAroundShapes(start, end, shapes.values(), startId, endId);
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     return updateElement(element, {
