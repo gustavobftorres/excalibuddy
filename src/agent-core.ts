@@ -19,7 +19,7 @@ import { z } from "zod";
 import { buildPlanningTools, buildTools } from "./tools";
 import { serializeCanvasState } from "./context/canvas-state";
 import { applySkeleton } from "./context/applySkeleton";
-import { findOverlaps } from "./context/overlaps";
+import { summarizeCanvasHygiene } from "./context/canvas-hygiene";
 import { verifyCanvasElements } from "./context/verify-canvas";
 import { normalizeTextRenderBounds } from "./context/text-rendering";
 import {
@@ -36,11 +36,11 @@ You are a technical diagram design assistant that controls an Excalidraw canvas.
 # Tools
 
 - **queryCanvas()** read the current contents of the canvas. ALWAYS call this first if the conversation might involve modifying or extending an existing diagram. Returns a summary of every element with id, type, position, and label.
-- **verifyCanvas(userRequest)** verify the current canvas after creating or modifying a diagram. Pass the user's current request verbatim. Returns deterministic visual and structural issues plus suggestions: overlaps, clipped labels, unbound arrows, poor arrow anchors, and disconnected shapes when the request implies a connected diagram.
+- **verifyCanvas(userRequest)** verify the current canvas after creating or modifying a diagram. Pass the user's current request verbatim. Returns deterministic visual and structural issues plus suggestions: overlaps, clipped labels, unbound arrows, poor arrow anchors, arrows crossing unrelated shapes, and disconnected shapes when the request implies a connected diagram.
 - **addElements(elements)** add new elements to the canvas. Use for creating diagrams or appending to existing ones.
 - **updateElements(updates)** change properties of existing elements by id. Use for recoloring, repositioning, relabeling, resizing.
-- **removeElements(ids)** delete elements by id.
-- **searchWeb(query)** search the web for current information. Web search is user-controlled: when the user enables Search web, you MUST call this before drawing, using the user's request or necessary context as the query; when Search web is disabled, do not call it unless the user explicitly asks you to search the web.
+- **removeElements(ids)** delete elements by id. Only use this when the user explicitly asks to delete or remove elements.
+- **searchWeb(query)** search the web for current information. Web search is user-controlled: when the user enables Search web, call it once at the start of the turn before drawing, using the user's request or necessary context as the query; when Search web is disabled, do not call it unless the user explicitly asks you to search the web.
 - **searchKnowledge(query)** search the private knowledge base for reference material on systems, processes, or topics the user is asking you to draw. Use this BEFORE drawing when the request touches a specific technical system, protocol, organizational structure, or process where precise details matter. The knowledge base contains short reference docs you can read to make the diagram more accurate than what you'd produce from memory alone.
 
 # Hard rules
@@ -87,16 +87,17 @@ Recognize the pattern, then follow its layout.
 - Do NOT create arrows where one or both endpoints reference an id that doesn't exist in this call or on the canvas. The arrow will float.
 - Do NOT place two elements at the same coordinates.
 - Do NOT respond with text without making a tool call when the user asked for a diagram.
+- Do NOT use \`removeElements\` to fix overlaps, arrow path obstacles, clipped labels, or disconnected diagrams. Removing a required arrow or shape hides the problem and breaks the diagram.
 
 # Behavioral guidelines
 
-- **Act on overlap feedback.** Every \`addElements\` result includes an \`overlaps\` array listing pairs of element ids whose bounding boxes collide on the canvas. If \`overlaps\` is non empty after a call, your next action MUST be one or more \`updateElements\` calls that move the offending elements apart. Do not leave overlaps in the final layout.
-- **Act on canvas hygiene warnings.** If \`queryCanvas\` reports unbound arrows, angled arrows between aligned shapes, clipped labels, or unreadable text, your next action MUST be \`updateElements\`, \`addElements\`, or \`removeElements\` to fix those exact ids. Straight arrows between vertically or horizontally aligned shapes should run from the middle of the source shape edge to the middle of the target shape edge; for diamonds this is the relevant corner.
-- **Verify connected diagrams before final response.** After creating or modifying any flow, sequence, architecture, state machine, ER diagram, network topology, org chart, or any diagram with relationships between shapes, call \`verifyCanvas({ userRequest: "..." })\` before your final answer. If it returns issues, fix them with \`updateElements\`, \`addElements\`, or \`removeElements\`, then call \`verifyCanvas\` again.
+- **Act on mutation feedback.** Every \`addElements\` and \`updateElements\` result includes an \`overlaps\` array listing pairs of element ids whose bounding boxes collide and an \`arrowPathObstacles\` array listing arrows that cross unrelated shapes. If either array is non empty, your next action MUST be one or more \`updateElements\` or \`addElements\` calls that preserve the requested relationships while moving shapes apart or recreating missing arrows. Do not leave overlaps or arrow path obstacles in the final layout.
+- **Act on canvas hygiene warnings.** If \`queryCanvas\` reports unbound arrows, angled arrows between aligned shapes, arrows crossing unrelated shapes, clipped labels, or unreadable text, your next action MUST be \`updateElements\` or \`addElements\` to repair those exact ids. Move or resize shapes to create enough routing space; the canvas normalizer will curve arrows around blockers. If an arrow is missing or unbound, recreate it with \`addElements\` using the original start and end shapes.
+- **Verify connected diagrams before final response.** After creating or modifying any flow, sequence, architecture, state machine, ER diagram, network topology, org chart, or any diagram with relationships between shapes, call \`verifyCanvas({ userRequest: "..." })\` before your final answer. If it returns issues, fix them with \`updateElements\` or \`addElements\`, then call \`verifyCanvas\` again. Never remove required arrows or connected shapes to make verification pass.
 - **Query before you modify.** If the user says "make the login box red," call \`queryCanvas\` first to find the login box's id, then \`updateElements\` to change its color. Never invent ids.
 - **Prefer updateElements for tweaks.** Don't redraw the whole diagram when one element changes.
 - **Preserve what exists.** When adding to a non empty canvas, do not delete or restyle elements the user did not mention.
-- **Respect the Search web setting.** If Search web is enabled for this turn, call \`searchWeb\` before drawing. If Search web is disabled, do not autonomously call \`searchWeb\`; only call it when the user explicitly asks for web search.
+- **Respect the Search web setting.** When Search web is enabled, call \`searchWeb\` once at the start of the turn before drawing. Do not call \`searchWeb\` again for visual canvas corrections, overlap fixes, arrow routing, label fixes, or verification retries. If Search web is disabled, do not autonomously call \`searchWeb\`; only call it when the user explicitly asks for web search.
 - **Ask one clarifying question only if the request is genuinely ambiguous.** Make reasonable choices and draw.
 
 # Worked example: a labeled flow
@@ -130,7 +131,7 @@ Clarify the user's diagram request, identify missing details, and produce a conc
 # Tools
 
 - **requestPlanApproval(...)** present the final plan for user approval. Use this once the request is clear enough to build.
-- **searchWeb(query)** search the web for current information. Web search is user-controlled: when the user enables Search web, you MUST call this before finalizing the plan, using the user's request or necessary context as the query; when Search web is disabled, do not call it unless the user explicitly asks you to search the web.
+- **searchWeb(query)** search the web for current information. Web search is user-controlled: when the user enables Search web, call this once at the start of the turn before finalizing the plan, using the user's request or necessary context as the query; when Search web is disabled, do not call it unless the user explicitly asks you to search the web.
 - **searchKnowledge(query)** search the private knowledge base for technical reference material before finalizing the plan.
 
 # Hard rules
@@ -146,7 +147,7 @@ Clarify the user's diagram request, identify missing details, and produce a conc
 - Prefer one tight follow-up question over a long questionnaire.
 - Make reasonable assumptions when the missing detail is low risk, and record those assumptions in the plan.
 - Keep the plan implementation-oriented so the build phase can draw directly from it.
-- Respect the Search web setting. If Search web is enabled for this turn, call \`searchWeb\` before finalizing the plan. If Search web is disabled, do not autonomously call \`searchWeb\`; only call it when the user explicitly asks for web search.`;
+- Respect the Search web setting. When Search web is enabled, call \`searchWeb\` once at the start of the turn before finalizing the plan. Do not call \`searchWeb\` again while refining the plan unless the prior search failed and the user explicitly asked for current web information. If Search web is disabled, do not autonomously call \`searchWeb\`; only call it when the user explicitly asks for web search.`;
 
 interface AgentArgs {
   model: LanguageModel;
@@ -167,15 +168,20 @@ interface AgentArgs {
     UPSTASH_VECTOR_REST_TOKEN?: string;
   };
   webSearchRequired?: boolean;
+  abortSignal?: AbortSignal;
 }
 
 export function buildWebSearchPrepareStep(
-  webSearchRequired: boolean
+  webSearchRequired: boolean,
+  activeToolsAfterForcedSearch?: string[]
 ): PrepareStepFunction<any> | undefined {
   if (!webSearchRequired) return undefined;
+  const laterActiveTools = activeToolsAfterForcedSearch?.filter((toolName) => toolName !== "searchWeb");
 
   return ({ stepNumber }) => {
-    if (stepNumber !== 0) return undefined;
+    if (stepNumber !== 0) {
+      return laterActiveTools ? { activeTools: laterActiveTools } : undefined;
+    }
     return {
       toolChoice: { type: "tool", toolName: "searchWeb" },
       activeTools: ["searchWeb"],
@@ -193,15 +199,24 @@ export function streamAgent({
   onError,
   env = {},
   webSearchRequired = false,
+  abortSignal,
 }: AgentArgs) {
   return streamText({
     model,
     system,
     messages,
     tools: buildTools(env),
-    prepareStep: buildWebSearchPrepareStep(webSearchRequired),
+    prepareStep: buildWebSearchPrepareStep(webSearchRequired, [
+      "addElements",
+      "removeElements",
+      "updateElements",
+      "queryCanvas",
+      "verifyCanvas",
+      "searchKnowledge",
+    ]),
     stopWhen: stepCountIs(maxSteps),
     timeout: { totalMs: 60000, chunkMs: 20000 },
+    abortSignal,
     onFinish,
     onError,
   });
@@ -216,15 +231,20 @@ export function streamPlanningAgent({
   onError,
   env = {},
   webSearchRequired = false,
+  abortSignal,
 }: AgentArgs) {
   return streamText({
     model,
     system,
     messages,
     tools: buildPlanningTools(env),
-    prepareStep: buildWebSearchPrepareStep(webSearchRequired),
+    prepareStep: buildWebSearchPrepareStep(webSearchRequired, [
+      "requestPlanApproval",
+      "searchKnowledge",
+    ]),
     stopWhen: [hasToolCall("requestPlanApproval"), stepCountIs(maxSteps)],
     timeout: { totalMs: 60000, chunkMs: 20000 },
+    abortSignal,
     onFinish,
     onError,
   });
@@ -278,11 +298,9 @@ export async function runAgent({
         const runtime = normalizeElements(applySkeleton(elements as Record<string, unknown>[]));
         for (const el of runtime) sim.push({ ...el });
         normalizeSim();
-        // Surface overlaps in the tool result so the agent loop sees
-        // collisions immediately and can self correct via updateElements.
-        // Same finding the noOverlaps scorer would report on this scene.
-        const overlaps = findOverlaps(sim);
-        return { added: runtime.length, overlaps };
+        // Surface hygiene issues immediately so the agent can self correct
+        // before final verification.
+        return { added: runtime.length, ...summarizeCanvasHygiene(sim) };
       },
     }),
     updateElements: tool({
@@ -301,7 +319,7 @@ export async function runAgent({
           if (target) Object.assign(target, fields);
         }
         normalizeSim();
-        return { updates: cleaned };
+        return { updates: cleaned, ...summarizeCanvasHygiene(sim) };
       },
     }),
     removeElements: tool({

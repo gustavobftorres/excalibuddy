@@ -11,6 +11,7 @@ import { buildUIMessageStreamResponseOptions } from "./agent-stream-options";
 import { insertProjectLog, shouldLogTraces } from "./observability/braintrust";
 import { classifyAgentFailure, serializeAgentError } from "./agent-failures";
 import type { ChatMessageMetadata, TraceToolCall } from "./flywheel/types";
+import { consumeWebSearchRequirement } from "./web-search-policy";
 
 interface Env extends Cloudflare.Env {
   OPENAI_API_KEY: string;
@@ -65,7 +66,12 @@ function collectToolCalls(steps: { toolCalls?: unknown[]; toolResults?: unknown[
 }
 
 export class DesignAgent extends AIChatAgent<Env> {
-  async onChatMessage(onFinish?: StreamTextOnFinishCallback<any>, options?: { requestId: string; body?: Record<string, unknown> }) {
+  private readonly webSearchTurnIds = new Set<string>();
+
+  async onChatMessage(
+    onFinish?: StreamTextOnFinishCallback<any>,
+    options?: { requestId: string; abortSignal?: AbortSignal; body?: Record<string, unknown> }
+  ) {
     const openai = createOpenAI({ apiKey: this.env.OPENAI_API_KEY });
     const modelId = "gpt-5.4";
     const model = openai(modelId);
@@ -77,7 +83,11 @@ export class DesignAgent extends AIChatAgent<Env> {
         ? options.body.turnId
         : latestUserMetadata.turnId ?? options?.requestId ?? crypto.randomUUID();
     const mode = options?.body?.mode === "planning" ? "planning" : "build";
-    const webSearchRequired = options?.body?.webSearchEnabled === true;
+    const webSearchRequired = consumeWebSearchRequirement({
+      enabled: options?.body?.webSearchEnabled === true,
+      turnId,
+      searchedTurnIds: this.webSearchTurnIds,
+    });
     const sessionId =
       typeof options?.body?.sessionId === "string"
         ? options.body.sessionId
@@ -193,6 +203,7 @@ export class DesignAgent extends AIChatAgent<Env> {
         UPSTASH_VECTOR_REST_TOKEN: this.env.UPSTASH_VECTOR_REST_TOKEN,
       },
       webSearchRequired,
+      abortSignal: options?.abortSignal,
     };
 
     const result = mode === "planning" ? streamPlanningAgent(agentArgs) : streamAgent(agentArgs);
