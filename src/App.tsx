@@ -131,6 +131,7 @@ export default function App() {
     const stored = window.localStorage.getItem(PLANNING_MODE_ENABLED_KEY);
     return stored === null ? true : stored === "true";
   });
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [agentMode, setAgentMode] = useState<"planning" | "build">("build");
   const [planningModeNotice, setPlanningModeNotice] = useState<string | null>(null);
   const [pendingPlanApproval, setPendingPlanApproval] = useState<PlanApprovalPayload | null>(null);
@@ -212,6 +213,7 @@ export default function App() {
         assistantMessageId: pendingAssistantMessageIdRef.current,
         requestedMode: pendingAgentModeRef.current,
         planningModeEnabled,
+        webSearchEnabled,
         currentAgentMode: agentMode,
       }),
     onToolCall: async ({ toolCall, addToolOutput }) => {
@@ -429,6 +431,7 @@ export default function App() {
       messages,
       pendingPlanApproval,
       planningModeEnabled,
+      webSearchEnabled,
       sendMessage,
       trialState,
     ]
@@ -543,6 +546,10 @@ export default function App() {
     }
     setAgentMode("planning");
     setPlanningModeNotice("Planning mode is on. Turn it off when you want to execute a plan.");
+  }, []);
+
+  const handleWebSearchToggle = useCallback((enabled: boolean) => {
+    setWebSearchEnabled(enabled);
   }, []);
 
   const handleFeedback = useCallback(
@@ -700,6 +707,7 @@ export default function App() {
         isOpen={isChatOpen}
         planningModeEnabled={planningModeEnabled}
         planningModeActive={planningModeEnabled || agentMode === "planning"}
+        webSearchEnabled={webSearchEnabled}
         planningModeNotice={planningModeNotice}
         pendingPlanApproval={pendingPlanApproval}
         promptingDisabled={promptingDisabled}
@@ -707,6 +715,7 @@ export default function App() {
         repositoryUrl={REPOSITORY_URL}
         onApprovePlan={handleApprovePlan}
         onPlanningModeToggle={handlePlanningModeToggle}
+        onWebSearchToggle={handleWebSearchToggle}
         onRequestPlanChanges={handleRequestPlanChanges}
         onRetry={handleRetry}
         onClearCanvas={handleClearCanvas}

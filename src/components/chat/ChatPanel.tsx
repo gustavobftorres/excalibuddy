@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { UIMessage } from "ai";
+import { Globe2, ListChecks } from "lucide-react";
 import MessageList from "./MessageList";
 import type { UserFeedback } from "../../flywheel/types";
 import type { PlanApprovalPayload } from "../../planning/types";
 import PlanApprovalCard from "../hitl/PlanApprovalCard";
+import ChatToolToggle from "./ChatToolToggle";
+import { TooltipProvider } from "../ui/tooltip";
 import excaliLogo from "../../../assets/excalilogo.png";
 import "./chat.css";
 import "../hitl/hitl.css";
@@ -19,6 +22,7 @@ interface ChatPanelProps {
   isOpen: boolean;
   planningModeEnabled: boolean;
   planningModeActive: boolean;
+  webSearchEnabled: boolean;
   planningModeNotice?: string | null;
   pendingPlanApproval: PlanApprovalPayload | null;
   promptingDisabled: boolean;
@@ -26,6 +30,7 @@ interface ChatPanelProps {
   repositoryUrl: string;
   onApprovePlan: () => void;
   onPlanningModeToggle: (enabled: boolean) => void;
+  onWebSearchToggle: (enabled: boolean) => void;
   onRequestPlanChanges: () => void;
   onRetry: () => void;
   onClearCanvas: () => void;
@@ -44,6 +49,7 @@ export default function ChatPanel({
   isOpen,
   planningModeEnabled,
   planningModeActive,
+  webSearchEnabled,
   planningModeNotice,
   pendingPlanApproval,
   promptingDisabled,
@@ -51,6 +57,7 @@ export default function ChatPanel({
   repositoryUrl,
   onApprovePlan,
   onPlanningModeToggle,
+  onWebSearchToggle,
   onRequestPlanChanges,
   onRetry,
   onClearCanvas,
@@ -151,20 +158,26 @@ export default function ChatPanel({
           />
           <div className="chat-input-actions">
             <div className="chat-input-actions-left">
-              <label className="chat-planning-toggle" aria-label="Toggle planning mode">
-                <span className="chat-planning-toggle-label">Planning mode</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={planningModeEnabled}
-                  aria-label={`Planning mode ${planningModeEnabled ? "enabled" : "disabled"}`}
-                  className={`chat-switch ${planningModeEnabled ? "on" : "off"} ${planningModeActive ? "active" : ""}`}
-                  onClick={() => onPlanningModeToggle(!planningModeEnabled)}
-                  disabled={isStreaming || promptingDisabled}
-                >
-                  <span className="chat-switch-thumb" />
-                </button>
-              </label>
+              <TooltipProvider delayDuration={180}>
+                <div className="chat-tool-controls" aria-label="Agent options">
+                  <ChatToolToggle
+                    label="Planning mode"
+                    tooltip="Plan before drawing"
+                    active={planningModeEnabled}
+                    disabled={isStreaming || promptingDisabled}
+                    onToggle={() => onPlanningModeToggle(!planningModeEnabled)}
+                    icon={<ListChecks size={18} strokeWidth={2} />}
+                  />
+                  <ChatToolToggle
+                    label="Search web"
+                    tooltip="Search the web before generating"
+                    active={webSearchEnabled}
+                    disabled={isStreaming || promptingDisabled}
+                    onToggle={() => onWebSearchToggle(!webSearchEnabled)}
+                    icon={<Globe2 size={18} strokeWidth={2} />}
+                  />
+                </div>
+              </TooltipProvider>
               {pendingPlanApproval && (
                 <div className="chat-plan-actions">
                   <button

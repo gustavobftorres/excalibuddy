@@ -95,6 +95,7 @@ test("buildAgentRequestBody uses the per-turn mode over stale React state", () =
       assistantMessageId: "assistant-1",
       requestedMode: "planning",
       planningModeEnabled: false,
+      webSearchEnabled: false,
       currentAgentMode: "build",
     }),
     {
@@ -102,6 +103,25 @@ test("buildAgentRequestBody uses the per-turn mode over stale React state", () =
       turnId: "turn-1",
       assistantMessageId: "assistant-1",
       mode: "planning",
+      webSearchEnabled: false,
+    }
+  );
+});
+
+test("buildAgentRequestBody includes the per-turn web search preference", () => {
+  assert.deepEqual(
+    buildAgentRequestBody({
+      sessionId: "session-1",
+      planningModeEnabled: false,
+      webSearchEnabled: true,
+      currentAgentMode: "build",
+    }),
+    {
+      sessionId: "session-1",
+      turnId: undefined,
+      assistantMessageId: undefined,
+      mode: "build",
+      webSearchEnabled: true,
     }
   );
 });
