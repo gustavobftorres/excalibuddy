@@ -14,3 +14,10 @@ class_name = "DesignAgent"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["DesignAgent"]
+
+[observability.logs]
+enabled = false
+invocation_logs = true
+
+[observability.traces]
+enabled = false
