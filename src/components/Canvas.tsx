@@ -3,6 +3,7 @@ import "@excalidraw/excalidraw/index.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { AppState } from "@excalidraw/excalidraw/types";
 import { useRef, useCallback } from "react";
+import { createElementCountNotifier, getVisibleElementCount } from "./canvas-element-count";
 
 interface CanvasProps {
   onApiReady?: (api: ExcalidrawImperativeAPI) => void;
@@ -17,25 +18,30 @@ export default function Canvas({
 }: CanvasProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const lastTheme = useRef<string>("light");
+  const onElementCountChangeRef = useRef(onElementCountChange);
+  onElementCountChangeRef.current = onElementCountChange;
+  const elementCountNotifierRef = useRef(
+    createElementCountNotifier((count) => onElementCountChangeRef.current?.(count))
+  );
 
   const handleMount = useCallback(
     (api: ExcalidrawImperativeAPI) => {
       apiRef.current = api;
       onApiReady?.(api);
-      onElementCountChange?.(api.getSceneElements().filter((element) => !element.isDeleted).length);
+      elementCountNotifierRef.current(getVisibleElementCount(api.getSceneElements()));
     },
-    [onApiReady, onElementCountChange]
+    [onApiReady]
   );
 
   const handleChange = useCallback(
     (elements: readonly any[], appState: AppState) => {
-      onElementCountChange?.(elements.filter((element) => !element.isDeleted).length);
+      elementCountNotifierRef.current(getVisibleElementCount(elements));
       if (appState.theme !== lastTheme.current) {
         lastTheme.current = appState.theme;
         onThemeChange?.(appState.theme as "light" | "dark");
       }
     },
-    [onElementCountChange, onThemeChange]
+    [onThemeChange]
   );
 
   return (
