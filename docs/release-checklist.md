@@ -54,4 +54,15 @@ For each smoke test, verify that labels render inside their shapes, arrows are c
 
 ## Flywheel regression flow
 
+Use the [flywheel triage ritual](./flywheel-triage.md) whenever production feedback should become regression coverage.
+
+Before release:
+
+- Export candidates with `npm run flywheel:export`.
+- Review `thumbs_down` candidates first in `evals/datasets/flywheel-candidates.json`.
+- Rewrite approved candidates so `expectedCharacteristics` describe the corrected behavior.
+- Promote approved cases with `npm run flywheel:promote -- <sourceTraceId-or-suggestedId>`.
+- Run evals with `npm run eval` after promotion.
+- In Braintrust, confirm promoted cases appear with `source: "flywheel"`.
+
 Promoted production-derived cases live in `evals/datasets/regression.json`. The default eval suite loaded by `npm run eval` includes those cases alongside `golden_2.json`, so promoted regressions participate in the normal eval gate instead of requiring a separate command.
