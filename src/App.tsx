@@ -61,9 +61,9 @@ import {
   finalizeTrace,
   getMessageMetadata,
   getTraceApiBaseUrl,
-  hasPendingToolCall,
   sendFeedback,
 } from "./flywheel/client";
+import { getFinalFeedbackCandidate } from "./flywheel/final-feedback";
 import type { UserFeedback } from "./flywheel/types";
 import "./App.css";
 
@@ -615,17 +615,14 @@ export default function App() {
     const api = excalidrawAPIRef.current;
     if (!api) return;
 
-    const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
-    if (!latestAssistant || hasPendingToolCall(latestAssistant)) return;
+    const candidate = getFinalFeedbackCandidate(messages);
+    if (!candidate) return;
+    const { message: latestAssistant, metadata } = candidate;
     if (finalizedAssistantIdsRef.current.has(latestAssistant.id)) return;
 
-    const metadata = getMessageMetadata(latestAssistant);
-    if (!metadata.turnId) return;
-
     const timeout = window.setTimeout(() => {
-      const currentLatestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
-      if (!currentLatestAssistant || currentLatestAssistant.id !== latestAssistant.id) return;
-      if (hasPendingToolCall(currentLatestAssistant)) return;
+      const currentCandidate = getFinalFeedbackCandidate(messages);
+      if (!currentCandidate || currentCandidate.message.id !== latestAssistant.id) return;
       finalizedAssistantIdsRef.current.add(latestAssistant.id);
       const finalCanvasSummary = serializeCanvasState(api.getSceneElements() as unknown[]);
       setFeedbackReadyMessageIds((prev) => {
