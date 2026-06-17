@@ -5,6 +5,7 @@ import {
   logProjectFeedback,
   shouldLogTraces,
 } from "../src/observability/braintrust";
+import { createWorkerFetchHandler } from "../src/worker-fetch";
 
 test("insertProjectLog sends a Braintrust project log event", async () => {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -101,4 +102,65 @@ test("Braintrust helpers fail closed when logging is disabled or remote logging 
   });
 
   assert.equal(calls, 1);
+});
+
+test("finalize trace endpoint logs final canvas summary on the same turn id", async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init ?? {} });
+    return new Response(JSON.stringify({ row_ids: ["turn-1"] }), { status: 200 });
+  };
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = fetcher;
+  try {
+    const handler = createWorkerFetchHandler({
+      routeAgentRequest: async () => undefined,
+    });
+
+    const response = await handler(
+      new Request("https://example.com/api/traces/finalize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://example.com",
+        },
+        body: JSON.stringify({
+          turnId: "turn-1",
+          sessionId: "session-1",
+          assistantMessageId: "assistant-turn-1",
+          finalText: "Done.",
+          finalCanvasSummary: [{ id: "rect_user", type: "rectangle", label: "User" }],
+          toolCalls: [{ name: "addElements", output: { added: 1 } }],
+        }),
+      }),
+      {
+        BRAINTRUST_API_KEY: "bt-key",
+        BRAINTRUST_PROJECT_ID: "project-1",
+        TRACE_LOGGING_ENABLED: "true",
+        FRONTEND_ORIGIN: "https://example.com",
+      } as never
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+
+    const payload = JSON.parse(String(calls[0]?.init.body));
+    assert.deepEqual(payload.events[0], {
+      id: "turn-1",
+      output: {
+        finalText: "Done.",
+        finalCanvasSummary: [{ id: "rect_user", type: "rectangle", label: "User" }],
+        toolCalls: [{ name: "addElements", output: { added: 1 } }],
+      },
+      tags: ["production", "assistant-turn", "diagram-agent", "client-finalized"],
+      metadata: {
+        sessionId: "session-1",
+        assistantMessageId: "assistant-turn-1",
+        finalized: true,
+      },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
