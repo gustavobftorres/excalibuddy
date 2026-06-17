@@ -77,7 +77,7 @@ TAVILY_API_KEY=tvly-...
 
 The Worker reads from this file via `wrangler dev` automatically. Node scripts (`npm run embed`, `npm run eval`) read it via `dotenv-cli`.
 
-Before publishing release or demo-facing changes, use the [release checklist](./docs/release-checklist.md) to confirm tests, builds, eval thresholds, demo-critical evals, manual canvas smoke tests, and promoted flywheel regressions.
+Before publishing release or demo-facing changes, use the [release checklist](./docs/release-checklist.md) to confirm tests, builds, eval thresholds, demo-critical evals, manual canvas smoke tests, and promoted flywheel regressions. When production feedback needs review, follow the [flywheel triage ritual](./docs/flywheel-triage.md) to export candidates, review thumbs-down traces, promote approved cases, and rerun evals.
 
 ### 4. Deploy
 
