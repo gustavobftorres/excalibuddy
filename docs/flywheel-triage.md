@@ -82,6 +82,41 @@ Prioritize `reasons` containing `thumbs_down`. For each candidate, inspect:
 
 A candidate is worth promoting when it represents behavior we want to protect from regression. Do not promote noisy feedback when the user request was unclear, the complaint cannot be translated into an eval expectation, or the case duplicates an existing regression.
 
+### Manual Review Checklist
+
+Use this checklist for every `thumbs_down` candidate before editing `suggested`.
+
+Ignore the trace when:
+
+- The original `userInput` is too ambiguous to define a correct diagram.
+- The `comment` or `finalText` does not explain what was wrong.
+- The failure was caused by an external outage, browser issue, interrupted session, or missing environment setup.
+- The complaint is about subjective taste and cannot be turned into an observable canvas expectation.
+- The candidate duplicates an existing case in `evals/datasets/regression.json` or `evals/datasets/golden_2.json`.
+- The trace already satisfies the user's request after human inspection.
+
+Promote the trace to regression when:
+
+- The failure describes behavior that should not regress again.
+- The corrected behavior can be stated as concrete visual, structural, or textual expectations.
+- The prompt represents a realistic user workflow, demo path, or domain diagram.
+- The trace exposes a gap in layout, labels, arrows, connectivity, tool use, or content completeness.
+- Similar future changes to prompts, tools, canvas rendering, or eval scorers could reintroduce the failure.
+
+Before promotion, a human reviewer must replace placeholder `expectedCharacteristics` with expectations that are:
+
+- Observable in the rendered canvas.
+- Specific enough for another reviewer to understand without reopening Braintrust.
+- Focused on corrected behavior, not on the failed output.
+- Split into separate bullets when the case has multiple requirements, such as branch coverage, labels, and arrow connections.
+- Paired with `expectedKeywords` when important labels or domain terms must appear.
+
+Record the decision in `suggested.reviewNotes`:
+
+- For promoted cases, state the original failure, why it matters, and what corrected behavior the regression protects.
+- For ignored cases, leave a short local note in the review branch or issue comment if the reason would be useful later.
+- Do not promote a case with the default placeholder note or a vague note like `bad diagram`.
+
 ## Step 3: Rewrite The Suggested Case
 
 Before promoting, edit the candidate's `suggested` block so it describes the corrected expected behavior.
@@ -117,9 +152,10 @@ Use the existing eval categories from `evals/buildMessages.ts`:
 
 Use the existing difficulty values:
 
-- `easy`
+- `simple`
 - `medium`
 - `hard`
+- `edge`
 
 Keep `reviewNotes` specific. A future failure should be understandable without reopening Braintrust.
 
@@ -213,7 +249,9 @@ A flywheel triage pass is complete when:
 
 - Candidates were exported from Braintrust.
 - `thumbs_down` candidates were reviewed first.
+- Each reviewed candidate was ignored or approved using the manual review checklist.
 - Approved candidates have concrete `expectedCharacteristics`.
+- Approved candidates have specific `reviewNotes` that explain the original failure and protected behavior.
 - Approved cases were promoted to `evals/datasets/regression.json`.
 - `npm run eval` ran after promotion.
 - Braintrust shows promoted cases with `source: flywheel`.
