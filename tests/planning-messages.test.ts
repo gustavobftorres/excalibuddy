@@ -61,3 +61,25 @@ test("getLatestPlanApprovalMessage ignores non-plan assistant messages", () => {
 
   assert.equal(getLatestPlanApprovalMessage(messages), null);
 });
+
+test("getLatestPlanApprovalMessage ignores incomplete streaming plan tool calls", () => {
+  const messages = [
+    {
+      id: "assistant-1",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-requestPlanApproval",
+          toolCallId: "tool-streaming",
+          state: "input-streaming",
+          input: {
+            title: "OAuth authorization code flow",
+            summary: "Show the main actors.",
+          },
+        },
+      ],
+    },
+  ] satisfies UIMessage[];
+
+  assert.equal(getLatestPlanApprovalMessage(messages), null);
+});

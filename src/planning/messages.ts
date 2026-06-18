@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { isPlanApprovalPayload } from "./approval";
 import type { PlanApprovalPayload } from "./types";
 
 export interface PlanApprovalMessage {
@@ -20,12 +21,18 @@ export function getLatestPlanApprovalMessage(messages: UIMessage[]): PlanApprova
             state?: string;
           }
         | undefined;
-      if (part?.type !== "tool-requestPlanApproval" || !part.input || !part.toolCallId) {
+      if (
+        part?.type !== "tool-requestPlanApproval" ||
+        part.state !== "output-available" ||
+        !part.input ||
+        !part.toolCallId ||
+        !isPlanApprovalPayload(part.input)
+      ) {
         continue;
       }
       return {
         toolCallId: part.toolCallId,
-        plan: part.input as PlanApprovalPayload,
+        plan: part.input,
       };
     }
   }
