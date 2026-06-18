@@ -28,10 +28,10 @@ import {
 import { getLatestPlanApprovalMessage } from "./planning/messages";
 import {
   buildAgentRequestBody,
-  buildApprovedPlanPrompt,
   shouldStartInPlanningMode,
   type AgentMode,
 } from "./planning/session";
+import { buildApprovePlanCommand } from "./planning/approval";
 import type { PlanApprovalPayload } from "./planning/types";
 import {
   buildExcalidrawExport,
@@ -160,6 +160,7 @@ export default function App() {
   const pendingAgentModeRef = useRef<AgentMode | undefined>(undefined);
   const finalizedAssistantIdsRef = useRef<Set<string>>(new Set());
   const resolvedPlanToolCallIdsRef = useRef<Set<string>>(new Set());
+  const approvedPlanIdsRef = useRef<Set<string>>(new Set());
   const loggedFailureIdsRef = useRef<Set<string>>(new Set());
   const traceApiBaseUrl = getTraceApiBaseUrl(agentHost);
   const generateChatMessageId = useMemo(
@@ -524,35 +525,57 @@ export default function App() {
   }, [messages, showFailureNotice, traceApiBaseUrl]);
 
   const handleApprovePlan = useCallback(() => {
-    if (!pendingPlanApproval || !lastCreatePrompt) return;
+    const result = buildApprovePlanCommand({
+      plan: pendingPlanApproval,
+      planId: pendingPlanApprovalId,
+      originalPrompt: lastCreatePrompt,
+    });
 
-    if (planningModeEnabled) {
-      setPlanningModeNotice(
-        "Turn off Planning mode to execute this approved plan on the canvas."
-      );
+    if (!result.ok) {
+      setPlanningModeNotice(result.reason);
       return;
     }
 
-    const approvedPlanPrompt = buildApprovedPlanPrompt({
-      originalPrompt: lastCreatePrompt,
-      plan: pendingPlanApproval,
-    });
+    const { planId, prompt } = result.command.payload;
+    if (approvedPlanIdsRef.current.has(planId)) return;
+    approvedPlanIdsRef.current.add(planId);
 
     setPendingPlanApproval(null);
-    if (pendingPlanApprovalId) {
-      resolvedPlanToolCallIdsRef.current.add(pendingPlanApprovalId);
-      setPendingPlanApprovalId(null);
-    }
+    resolvedPlanToolCallIdsRef.current.add(planId);
+    setPendingPlanApprovalId(null);
+    setPlanningModeEnabled(false);
     setAgentMode("build");
     setPlanningModeNotice(null);
-    void sendMessageWithTrace(
-      {
-        role: "user",
-        parts: [{ type: "text", text: approvedPlanPrompt }],
-      },
-      "build"
-    );
-  }, [lastCreatePrompt, pendingPlanApproval, pendingPlanApprovalId, sendMessageWithTrace]);
+
+    try {
+      sendMessageWithTrace(
+        {
+          role: "user",
+          parts: [{ type: "text", text: prompt }],
+        },
+        "build"
+      );
+    } catch (error) {
+      approvedPlanIdsRef.current.delete(planId);
+      resolvedPlanToolCallIdsRef.current.delete(planId);
+      setPendingPlanApproval(pendingPlanApproval);
+      setPendingPlanApprovalId(planId);
+      const kind = classifyAgentFailure(error, navigator.onLine);
+      setPlanningModeNotice("Could not start implementing the approved plan. Please try again.");
+      showFailureNotice(
+        buildFailureNotice({
+          id: `approve-plan-${planId}`,
+          kind,
+        })
+      );
+    }
+  }, [
+    lastCreatePrompt,
+    pendingPlanApproval,
+    pendingPlanApprovalId,
+    sendMessageWithTrace,
+    showFailureNotice,
+  ]);
 
   const handleRequestPlanChanges = useCallback(() => {
     setPendingPlanApproval(null);
